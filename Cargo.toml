@@ -1,0 +1,42 @@
+[package]
+name = "epdsi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mariusz Jurgielewicz <mordor@mail.com>"]
+description = "no_std embedded-hal 1.0 compatible Rust driver framework for Electronic Paper Displays (EPD)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/melastmohican/epdsi"
+documentation = "https://docs.rs/epdsi"
+readme = "README.md"
+keywords = ["epd", "e-paper", "embedded-hal", "display", "no-std"]
+categories = ["embedded", "no-std", "hardware-support"]
+rust-version = "1.75"
+
+[dependencies]
+embedded-hal = "1.0.0"
+embedded-graphics-core = { version = "0.4.0", optional = true }
+
+[dependencies.defmt]
+version = "0.3"
+optional = true
+
+[dev-dependencies]
+embedded-graphics = "0.8.1"
+embedded-hal-mock = "0.11.1"
+
+[features]
+default = ["graphics"]
+graphics = ["dep:embedded-graphics-core"]
+defmt = ["dep:defmt"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = true
+

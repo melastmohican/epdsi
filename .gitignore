@@ -1,0 +1,11 @@
+# Rust build output
+/target
+
+# macOS DS_Store
+.DS_Store
+
+# IDE / Editor configuration
+.idea/
+.vscode/
+*.swp
+*.swo
