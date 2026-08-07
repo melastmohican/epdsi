@@ -11,6 +11,8 @@ pub enum ColorMode {
     BlackWhite,
     /// Tri-Color (Black, White, and Red or Yellow)
     TriColor,
+    /// Quad-Color (Black, White, Red, and Yellow)
+    QuadColor,
     /// 7-Color Advanced Color ePaper (ACeP)
     SevenColor,
 }
@@ -22,6 +24,10 @@ pub enum ColorChannel {
     BlackWhite,
     /// Secondary Red/Yellow image channel (for Tri-Color panels)
     RedYellow,
+    /// Secondary Red image channel (for Quad-Color panels)
+    Red,
+    /// Secondary Yellow image channel (for Quad-Color panels)
+    Yellow,
     /// Multi-color channel indexing for 7-color displays
     Color7(u8),
 }
