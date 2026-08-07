@@ -64,7 +64,7 @@ impl DelayNs for MockDelay {
 }
 
 #[test]
-fn test_epd_driver_instantiation_and_paged_rendering() {
+fn test_ssd1681_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
@@ -88,6 +88,45 @@ fn test_epd_driver_instantiation_and_paged_rendering() {
 
     // Test paged rendering
     let mut page_buffer = [0u8; (200 * 20) / 8];
+    render_paged(
+        &mut driver,
+        &mut delay,
+        ColorChannel::BlackWhite,
+        &mut page_buffer,
+        20,
+        0xFF,
+        |page_buf| {
+            page_buf.set_pixel(10, page_buf.y_offset() + 5, true);
+        },
+    )
+    .expect("Paged rendering failed");
+}
+
+#[test]
+fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
+    let spi = MockSpi;
+    let dc = MockOutputPin;
+    let rst = MockOutputPin;
+    let busy = MockInputPin;
+    let mut delay = MockDelay;
+
+    let bus = SpiBusWrapper::new(spi, dc, rst, busy);
+    let controller = Jd79661Controller::new(ZJY122250_0213AJH_E5::WIDTH, ZJY122250_0213AJH_E5::HEIGHT);
+    let mut driver = EpdBuilder::<_, ZJY122250_0213AJH_E5>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 250);
+    assert_eq!(driver.height(), 122);
+
+    // Test initialization
+    driver.init(&mut delay).expect("Initialization failed");
+
+    // Test clear frame
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .expect("Clear frame failed");
+
+    // Test paged rendering
+    let mut page_buffer = [0u8; (250 * 20) / 8];
     render_paged(
         &mut driver,
         &mut delay,
