@@ -99,9 +99,10 @@ where
         // TCON
         bus.send_command_with_data(cmd::TCON, &[0x02, 0x02, 0x02])?;
 
-        // Resolution setting (128 x 250)
-        let w_high = ((self.width >> 8) & 0xFF) as u8;
-        let w_low = (self.width & 0xFF) as u8;
+        // Resolution setting (Align RAM width to 8-pixel byte boundary, e.g. 128 x 250)
+        let ram_width = self.width.div_ceil(8) * 8;
+        let w_high = ((ram_width >> 8) & 0xFF) as u8;
+        let w_low = (ram_width & 0xFF) as u8;
         let h_high = ((self.height >> 8) & 0xFF) as u8;
         let h_low = (self.height & 0xFF) as u8;
         bus.send_command_with_data(cmd::RESOLUTION, &[w_high, w_low, h_high, h_low])?;

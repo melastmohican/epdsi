@@ -1,11 +1,12 @@
-//! Panel specification for ZJY122250-0213AJH-E5 (2.13" 250x122 Quad-Color / Tri-Color e-Paper display).
+//! Panel specification for ZJY122250-0213AJH-E5 (2.13" 122x250 Quad-Color e-Paper display).
 //!
 //! ### Hardware Notes:
 //! - **Panel Model**: `ZJY122250-0213AJH-E5` (FPC ribbon cable model stamp)
-//! - **Good Display Equivalent**: `GDEY0213F51` (referenced in GxEPD2 library as `GxEPD2_213c_GDEY0213F51`)
+//! - **Good Display Equivalent**: `GDEY0213F51` (referenced in GxEPD2 library under `GxEPD2_4C` 4-color family as `GxEPD2_213c_GDEY0213F51`)
 //! - **Adafruit Hardware**: Used in Adafruit Product IDs 6373 and 6366 (Adafruit ThinkInk 2.13" Quad-Color display breakout: Black, White, Red, Yellow)
 //! - **Controller IC**: JD79661
-//! - **Resolution**: 250 x 122 pixels
+//! - **Native Resolution**: 122 x 250 pixels
+//! - **RAM Alignment**: 128 pixels (32 bytes per row) in JD79661 RAM layout (8,000 bytes total per 2bpp QuadColor frame).
 
 use crate::traits::{ColorMode, EpdPanel};
 
@@ -14,15 +15,15 @@ use crate::traits::{ColorMode, EpdPanel};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ZJY122250_0213AJH_E5;
 
-/// Type alias for Good Display part number `GDEY0213F51`.
+/// Type alias for Good Display 4-color part number `GDEY0213F51`.
 pub type GDEY0213F51 = ZJY122250_0213AJH_E5;
 
 impl EpdPanel for ZJY122250_0213AJH_E5 {
     /// Panel physical width in pixels.
-    const WIDTH: u32 = 250;
+    const WIDTH: u32 = 122;
 
     /// Panel physical height in pixels.
-    const HEIGHT: u32 = 122;
+    const HEIGHT: u32 = 250;
 
     /// Panel color operating mode (Quad-Color: Black, White, Red, Yellow).
     const COLOR_MODE: ColorMode = ColorMode::QuadColor;

@@ -114,8 +114,8 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let controller = Jd79661Controller::new(ZJY122250_0213AJH_E5::WIDTH, ZJY122250_0213AJH_E5::HEIGHT);
     let mut driver = EpdBuilder::<_, ZJY122250_0213AJH_E5>::new(controller).build(bus);
 
-    assert_eq!(driver.width(), 250);
-    assert_eq!(driver.height(), 122);
+    assert_eq!(driver.width(), 122);
+    assert_eq!(driver.height(), 250);
 
     // Test initialization
     driver.init(&mut delay).expect("Initialization failed");
@@ -126,7 +126,7 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
         .expect("Clear frame failed");
 
     // Test paged rendering
-    let mut page_buffer = [0u8; (250 * 20) / 8];
+    let mut page_buffer = [0u8; (122 * 20) / 8];
     render_paged(
         &mut driver,
         &mut delay,
