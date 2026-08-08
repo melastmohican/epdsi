@@ -108,13 +108,22 @@ where
         channel: ColorChannel,
         data: &[u8],
     ) -> Result<(), Self::Error> {
-        let cmd = match channel {
-            ColorChannel::BlackWhite => cmd::WRITE_BW_DATA,
-            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                cmd::WRITE_RED_DATA
+        match channel {
+            ColorChannel::BlackWhite => {
+                bus.send_command(cmd::WRITE_BW_DATA)?;
+                let mut buf = [0u8; 64];
+                for chunk in data.chunks(64) {
+                    for (i, &b) in chunk.iter().enumerate() {
+                        buf[i] = !b;
+                    }
+                    bus.send_data(&buf[..chunk.len()])?;
+                }
+                Ok(())
             }
-        };
-        bus.send_command_with_data(cmd, data)
+            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
+                bus.send_command_with_data(cmd::WRITE_RED_DATA, data)
+            }
+        }
     }
 
     fn write_frame_pattern(
@@ -124,10 +133,10 @@ where
         byte: u8,
         count: usize,
     ) -> Result<(), Self::Error> {
-        let cmd = match channel {
-            ColorChannel::BlackWhite => cmd::WRITE_BW_DATA,
+        let (cmd, byte) = match channel {
+            ColorChannel::BlackWhite => (cmd::WRITE_BW_DATA, !byte),
             ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                cmd::WRITE_RED_DATA
+                (cmd::WRITE_RED_DATA, byte)
             }
         };
         bus.send_command(cmd)?;
