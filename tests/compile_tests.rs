@@ -1,6 +1,6 @@
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
-use embedded_hal::spi::{ErrorKind, Operation, SpiDevice, ErrorType as SpiErrorType};
+use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation, SpiDevice};
 use epdsi::prelude::*;
 
 #[derive(Debug)]
@@ -111,7 +111,8 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
-    let controller = Jd79661Controller::new(ZJY122250_0213AJH_E5::WIDTH, ZJY122250_0213AJH_E5::HEIGHT);
+    let controller =
+        Jd79661Controller::new(ZJY122250_0213AJH_E5::WIDTH, ZJY122250_0213AJH_E5::HEIGHT);
     let mut driver = EpdBuilder::<_, ZJY122250_0213AJH_E5>::new(controller).build(bus);
 
     assert_eq!(driver.width(), 122);
@@ -182,4 +183,3 @@ fn test_pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering() {
     driver.refresh(&mut delay).expect("Refresh failed");
     driver.sleep(&mut delay).expect("Sleep failed");
 }
-

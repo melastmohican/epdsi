@@ -46,6 +46,11 @@ where
         &mut self.controller
     }
 
+    /// Access simultaneous mutable references to both communication bus and controller logic.
+    pub fn split_mut(&mut self) -> (&mut BUS, &mut CONTROLLER) {
+        (&mut self.bus, &mut self.controller)
+    }
+
     /// Returns display panel width in pixels.
     pub fn width(&self) -> u32 {
         PANEL::WIDTH

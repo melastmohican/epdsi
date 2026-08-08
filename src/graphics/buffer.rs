@@ -97,7 +97,10 @@ impl<'a> PageBuffer<'a> {
             DisplayRotation::Rotate270 => (y, self.height.saturating_sub(1).saturating_sub(x)),
         };
 
-        if mapped_x >= self.width || mapped_y < self.y_offset || mapped_y >= self.y_offset + self.height {
+        if mapped_x >= self.width
+            || mapped_y < self.y_offset
+            || mapped_y >= self.y_offset + self.height
+        {
             return;
         }
 

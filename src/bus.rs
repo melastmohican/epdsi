@@ -19,7 +19,8 @@ pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
 }
 
 /// Alias for SPI bus operation results.
-pub type SpiBusResult<SPIE, DCE, RSTE, BUSYE, T = ()> = Result<T, EpdBusError<SPIE, DCE, RSTE, BUSYE>>;
+pub type SpiBusResult<SPIE, DCE, RSTE, BUSYE, T = ()> =
+    Result<T, EpdBusError<SPIE, DCE, RSTE, BUSYE>>;
 
 /// SPI Bus Wrapper holding SPI device and control GPIO pins (DC, RST, BUSY).
 pub struct SpiBusWrapper<SPI, DC, RST, BUSY> {
@@ -123,7 +124,9 @@ where
         let mut remaining = count;
         while remaining > 0 {
             let write_len = remaining.min(chunk.len());
-            self.spi.write(&chunk[..write_len]).map_err(EpdBusError::Spi)?;
+            self.spi
+                .write(&chunk[..write_len])
+                .map_err(EpdBusError::Spi)?;
             remaining -= write_len;
         }
         Ok(())

@@ -126,7 +126,10 @@ where
     ) -> Result<(), Self::Error> {
         let x_byte = (x / 8) as u8;
         bus.send_command_with_data(cmd::SET_RAMXCNT, &[x_byte])?;
-        bus.send_command_with_data(cmd::SET_RAMYCNT, &[(y & 0xFF) as u8, ((y >> 8) & 0xFF) as u8])
+        bus.send_command_with_data(
+            cmd::SET_RAMYCNT,
+            &[(y & 0xFF) as u8, ((y >> 8) & 0xFF) as u8],
+        )
     }
 
     fn write_frame(
@@ -137,9 +140,10 @@ where
     ) -> Result<(), Self::Error> {
         let cmd = match channel {
             ColorChannel::BlackWhite => cmd::WRITE_BW_DATA,
-            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                cmd::WRITE_RED_DATA
-            }
+            ColorChannel::RedYellow
+            | ColorChannel::Red
+            | ColorChannel::Yellow
+            | ColorChannel::Color7(_) => cmd::WRITE_RED_DATA,
         };
         bus.send_command_with_data(cmd, data)
     }
@@ -153,9 +157,10 @@ where
     ) -> Result<(), Self::Error> {
         let cmd = match channel {
             ColorChannel::BlackWhite => cmd::WRITE_BW_DATA,
-            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                cmd::WRITE_RED_DATA
-            }
+            ColorChannel::RedYellow
+            | ColorChannel::Red
+            | ColorChannel::Yellow
+            | ColorChannel::Color7(_) => cmd::WRITE_RED_DATA,
         };
         bus.send_command(cmd)?;
         bus.send_data_repeated(byte, count)

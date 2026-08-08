@@ -21,6 +21,8 @@ pub mod cmd {
     pub const DISPLAY_REFRESH: u8 = 0x12;
     /// Write Red/Yellow RAM data (BufferRed / DTM2)
     pub const WRITE_RED_DATA: u8 = 0x13;
+    /// VCOM and Data Interval Setting (CDI)
+    pub const VCOM_INTERVAL: u8 = 0x50;
     /// Active Temperature sensor selection
     pub const ACTIVE_TEMP: u8 = 0xE0;
     /// Input Temperature value selection
@@ -29,25 +31,140 @@ pub mod cmd {
 
 // Register configuration constants
 const REG_DATA_SOFT_RESET: &[u8] = &[0x0E];
-const REG_DATA_INPUT_TEMP: &[u8] = &[0x19];
 const REG_DATA_ACTIVE_TEMP: &[u8] = &[0x02];
-const REG_DATA_PSR_CONFIG: &[u8] = &[0xCF, 0x8D];
+
+/// Display refresh operating mode for Pervasive Displays controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PervasiveRefreshMode {
+    /// Standard full screen update mode.
+    #[default]
+    Normal,
+    /// Embedded fast differential update mode.
+    Fast,
+}
 
 /// Pervasive Displays COG Controller IC driver implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PervasiveDisplaysController {
     width: u32,
     height: u32,
+    temperature_c: i8,
+    refresh_mode: PervasiveRefreshMode,
+    psr: [u8; 2],
+    auto_clear_secondary: bool,
+}
+
+impl Default for PervasiveDisplaysController {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            temperature_c: 25,
+            refresh_mode: PervasiveRefreshMode::Normal,
+            psr: [0xCF, 0x8D],
+            auto_clear_secondary: true,
+        }
+    }
 }
 
 impl PervasiveDisplaysController {
     /// Creates a new Pervasive Displays controller instance with target resolution.
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
+        Self {
+            width,
+            height,
+            ..Default::default()
+        }
+    }
+
+    /// Sets operating ambient temperature in Celsius (builder method).
+    pub fn with_temperature(mut self, temperature_c: i8) -> Self {
+        self.temperature_c = temperature_c;
+        self
+    }
+
+    /// Sets ambient temperature in Celsius.
+    pub fn set_temperature(&mut self, temperature_c: i8) {
+        self.temperature_c = temperature_c;
+    }
+
+    /// Returns current operating ambient temperature in Celsius.
+    pub fn temperature(&self) -> i8 {
+        self.temperature_c
+    }
+
+    /// Sets display refresh operating mode (builder method).
+    pub fn with_refresh_mode(mut self, mode: PervasiveRefreshMode) -> Self {
+        self.refresh_mode = mode;
+        self
+    }
+
+    /// Sets display refresh operating mode.
+    pub fn set_refresh_mode(&mut self, mode: PervasiveRefreshMode) {
+        self.refresh_mode = mode;
+    }
+
+    /// Returns current display refresh mode.
+    pub fn refresh_mode(&self) -> PervasiveRefreshMode {
+        self.refresh_mode
+    }
+
+    /// Configures Panel Setting Register (PSR) calibration parameters (builder method).
+    pub fn with_psr(mut self, psr: [u8; 2]) -> Self {
+        self.psr = psr;
+        self
+    }
+
+    /// Configures whether normal updates automatically clear secondary RAM buffer (`WRITE_RED_DATA`) with `0x00` (builder method).
+    pub fn with_auto_clear_secondary(mut self, auto_clear: bool) -> Self {
+        self.auto_clear_secondary = auto_clear;
+        self
+    }
+
+    /// Writes previous and current frame data for embedded fast differential update mode.
+    pub fn write_fast_frame<SPI, DC, RST, BUSY>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        previous_frame: &[u8],
+        current_frame: &[u8],
+    ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+    where
+        SPI: SpiDevice,
+        DC: OutputPin,
+        RST: OutputPin,
+        BUSY: InputPin,
+    {
+        // VCOM & data interval setting prior to frame write
+        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x27])?;
+
+        // First frame (0x10, DTM1) receives OLD / previous image (inverted for display logic)
+        bus.send_command(cmd::WRITE_BW_DATA)?;
+        let mut buf = [0u8; 64];
+        for chunk in previous_frame.chunks(64) {
+            for (i, &b) in chunk.iter().enumerate() {
+                buf[i] = !b;
+            }
+            bus.send_data(&buf[..chunk.len()])?;
+        }
+
+        // Second frame (0x13, DTM2) receives NEW / current image (inverted for display logic)
+        bus.send_command(cmd::WRITE_RED_DATA)?;
+        for chunk in current_frame.chunks(64) {
+            for (i, &b) in chunk.iter().enumerate() {
+                buf[i] = !b;
+            }
+            bus.send_data(&buf[..chunk.len()])?;
+        }
+
+        // Reset VCOM & data interval setting post frame write
+        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])?;
+
+        Ok(())
     }
 }
 
-impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for PervasiveDisplaysController
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>>
+    for PervasiveDisplaysController
 where
     SPI: SpiDevice,
     DC: OutputPin,
@@ -67,16 +184,30 @@ where
         // Pervasive Displays busy pin is active-low (busy when LOW)
         bus.wait_busy(false)?;
 
+        // Calculate work settings based on update mode
+        let (temp_val, psr_val) = match self.refresh_mode {
+            PervasiveRefreshMode::Normal => (self.temperature_c as u8, self.psr),
+            PervasiveRefreshMode::Fast => (
+                (self.temperature_c as u8) | 0x40,
+                [self.psr[0] | 0x10, self.psr[1] | 0x02],
+            ),
+        };
+
         // Soft reset command
         bus.send_command_with_data(cmd::PSR, REG_DATA_SOFT_RESET)?;
         bus.wait_busy(false)?;
 
         // Temperature calibration
-        bus.send_command_with_data(cmd::INPUT_TEMP, REG_DATA_INPUT_TEMP)?;
+        bus.send_command_with_data(cmd::INPUT_TEMP, &[temp_val])?;
         bus.send_command_with_data(cmd::ACTIVE_TEMP, REG_DATA_ACTIVE_TEMP)?;
 
         // Panel setting configuration
-        bus.send_command_with_data(cmd::PSR, REG_DATA_PSR_CONFIG)?;
+        bus.send_command_with_data(cmd::PSR, &psr_val)?;
+
+        // Fast update VCOM & Data Interval Setting
+        if self.refresh_mode == PervasiveRefreshMode::Fast {
+            bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])?;
+        }
 
         Ok(())
     }
@@ -118,11 +249,17 @@ where
                     }
                     bus.send_data(&buf[..chunk.len()])?;
                 }
+
+                if self.refresh_mode == PervasiveRefreshMode::Normal && self.auto_clear_secondary {
+                    bus.send_command(cmd::WRITE_RED_DATA)?;
+                    bus.send_data_repeated(0x00, data.len())?;
+                }
                 Ok(())
             }
-            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                bus.send_command_with_data(cmd::WRITE_RED_DATA, data)
-            }
+            ColorChannel::RedYellow
+            | ColorChannel::Red
+            | ColorChannel::Yellow
+            | ColorChannel::Color7(_) => bus.send_command_with_data(cmd::WRITE_RED_DATA, data),
         }
     }
 
@@ -135,9 +272,10 @@ where
     ) -> Result<(), Self::Error> {
         let (cmd, byte) = match channel {
             ColorChannel::BlackWhite => (cmd::WRITE_BW_DATA, !byte),
-            ColorChannel::RedYellow | ColorChannel::Red | ColorChannel::Yellow | ColorChannel::Color7(_) => {
-                (cmd::WRITE_RED_DATA, byte)
-            }
+            ColorChannel::RedYellow
+            | ColorChannel::Red
+            | ColorChannel::Yellow
+            | ColorChannel::Color7(_) => (cmd::WRITE_RED_DATA, byte),
         };
         bus.send_command(cmd)?;
         bus.send_data_repeated(byte, count)
@@ -148,9 +286,10 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command_with_data(cmd::POWER_ON, &[0x00])?;
         bus.wait_busy(false)?;
-        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])?;
+        bus.send_command(cmd::POWER_ON)?;
+        bus.wait_busy(false)?;
+        bus.send_command(cmd::DISPLAY_REFRESH)?;
         bus.wait_busy(false)
     }
 
@@ -159,7 +298,7 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command_with_data(cmd::POWER_OFF, &[0x00])?;
+        bus.send_command(cmd::POWER_OFF)?;
         bus.wait_busy(false)
     }
 }
