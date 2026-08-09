@@ -246,14 +246,49 @@ fn test_pervasive_write_frame_and_fast_frame() {
     assert_eq!(
         records,
         vec![
-            SpiRecord::Command(0x50),                       // VCOM_INTERVAL (Pre-write: 0x27)
+            SpiRecord::Command(0x50), // VCOM_INTERVAL (Pre-write: 0x27)
             SpiRecord::Data(vec![0x27]),
-            SpiRecord::Command(0x10),                       // WRITE_BW_DATA (Previous/Old)
+            SpiRecord::Command(0x10), // WRITE_BW_DATA (Previous/Old)
             SpiRecord::Data(vec![0x00, 0x00, 0x00, 0x00]), // !0xFF
-            SpiRecord::Command(0x13),                       // WRITE_RED_DATA (Current/New)
+            SpiRecord::Command(0x13), // WRITE_RED_DATA (Current/New)
             SpiRecord::Data(vec![0xFF, 0xFF, 0xFF, 0xFF]), // !0x00
-            SpiRecord::Command(0x50),                       // VCOM_INTERVAL (Post-write: 0x07)
+            SpiRecord::Command(0x50), // VCOM_INTERVAL (Post-write: 0x07)
             SpiRecord::Data(vec![0x07]),
+        ]
+    );
+}
+
+#[test]
+fn test_pervasive_driver_f_e2290ks0f1_init_sequence() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = PervasiveDisplaysController::new(E2290KS0F1::WIDTH, E2290KS0F1::HEIGHT)
+        .with_driver_variant(PervasiveDriverVariant::DriverF)
+        .with_temperature(25);
+    let mut delay = DummyDelay;
+
+    assert_eq!(EPD_290_KS_0F::WIDTH, 168);
+    assert_eq!(EPD_290_KS_0F::HEIGHT, 384);
+    assert_eq!(EPD_266_KS_0C::WIDTH, 152);
+    assert_eq!(EPD_266_KS_0C::HEIGHT, 296);
+
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x00), // PSR (Soft Reset)
+            SpiRecord::Data(vec![0x0E]),
+            SpiRecord::Command(0xE5), // INPUT_TEMP
+            SpiRecord::Data(vec![25]),
+            SpiRecord::Command(0xE0), // ACTIVE_TEMP
+            SpiRecord::Data(vec![0x02]),
+            SpiRecord::Command(0x4D), // Driver F register 0x4D
+            SpiRecord::Data(vec![0x55]),
+            SpiRecord::Command(0xE9), // Driver F register 0xE9
+            SpiRecord::Data(vec![0x02]),
         ]
     );
 }

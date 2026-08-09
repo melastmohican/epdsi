@@ -53,6 +53,8 @@ where
         delay: &mut DELAY,
         reset_duration_ms: u32,
     ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
+        self.rst.set_high().map_err(EpdBusError::Reset)?;
+        delay.delay_ms(5);
         self.rst.set_low().map_err(EpdBusError::Reset)?;
         delay.delay_ms(reset_duration_ms);
         self.rst.set_high().map_err(EpdBusError::Reset)?;
@@ -72,6 +74,31 @@ where
             if is_busy == busy_active_high {
                 // Yield/spin briefly
                 core::hint::spin_loop();
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Polls BUSY pin until display controller signals idle state, delaying between iterations.
+    ///
+    /// `busy_active_high`: `true` if HIGH indicates busy, `false` if LOW indicates busy.
+    pub fn wait_busy_with_delay<DELAY: DelayNs>(
+        &mut self,
+        delay: &mut DELAY,
+        busy_active_high: bool,
+    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
+        let mut retries = 0u32;
+        loop {
+            let is_busy = self.busy.is_high().map_err(EpdBusError::Busy)?;
+            if is_busy == busy_active_high {
+                delay.delay_ms(1);
+                retries += 1;
+                if retries > 1_500 {
+                    // Safety timeout after 1,500ms (1.5 seconds)
+                    break;
+                }
             } else {
                 break;
             }

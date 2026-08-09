@@ -7,6 +7,10 @@ use crate::traits::{ColorMode, EpdPanel};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct E2266KS0C1;
 
+/// Pervasive reference alias for 2.66" K-film Driver C display (`EPD_266_KS_0C` / `266-KS-0C`).
+#[allow(non_camel_case_types)]
+pub type EPD_266_KS_0C = E2266KS0C1;
+
 impl EpdPanel for E2266KS0C1 {
     /// Physical width of the display panel in pixels.
     const WIDTH: u32 = 152;

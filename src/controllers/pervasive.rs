@@ -43,6 +43,16 @@ pub enum PervasiveRefreshMode {
     Fast,
 }
 
+/// Pervasive COG driver IC variant family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PervasiveDriverVariant {
+    /// COG Driver C / E / D / 9 (e.g. E2266KS0C1 / EPD_266_KS_0C). Uses Panel Setting Register (PSR 0x00).
+    #[default]
+    DriverC,
+    /// COG Driver F (e.g. E2290KS0F1 / EPD_290_KS_0F). Uses registers 0x4D (0x55) and 0xE9 (0x02) instead of PSR.
+    DriverF,
+}
+
 /// Pervasive Displays COG Controller IC driver implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PervasiveDisplaysController {
@@ -50,6 +60,7 @@ pub struct PervasiveDisplaysController {
     height: u32,
     temperature_c: i8,
     refresh_mode: PervasiveRefreshMode,
+    driver_variant: PervasiveDriverVariant,
     psr: [u8; 2],
     auto_clear_secondary: bool,
 }
@@ -61,6 +72,7 @@ impl Default for PervasiveDisplaysController {
             height: 0,
             temperature_c: 25,
             refresh_mode: PervasiveRefreshMode::Normal,
+            driver_variant: PervasiveDriverVariant::DriverC,
             psr: [0xCF, 0x8D],
             auto_clear_secondary: true,
         }
@@ -107,6 +119,22 @@ impl PervasiveDisplaysController {
     /// Returns current display refresh mode.
     pub fn refresh_mode(&self) -> PervasiveRefreshMode {
         self.refresh_mode
+    }
+
+    /// Sets driver IC variant (builder method).
+    pub fn with_driver_variant(mut self, variant: PervasiveDriverVariant) -> Self {
+        self.driver_variant = variant;
+        self
+    }
+
+    /// Sets driver IC variant.
+    pub fn set_driver_variant(&mut self, variant: PervasiveDriverVariant) {
+        self.driver_variant = variant;
+    }
+
+    /// Returns current driver IC variant.
+    pub fn driver_variant(&self) -> PervasiveDriverVariant {
+        self.driver_variant
     }
 
     /// Configures Panel Setting Register (PSR) calibration parameters (builder method).
@@ -182,7 +210,7 @@ where
         bus.hard_reset(delay, 10)?;
 
         // Pervasive Displays busy pin is active-low (busy when LOW)
-        bus.wait_busy(false)?;
+        bus.wait_busy_with_delay(delay, false)?;
 
         // Calculate work settings based on update mode
         let (temp_val, psr_val) = match self.refresh_mode {
@@ -195,14 +223,22 @@ where
 
         // Soft reset command
         bus.send_command_with_data(cmd::PSR, REG_DATA_SOFT_RESET)?;
-        bus.wait_busy(false)?;
+        bus.wait_busy_with_delay(delay, false)?;
 
         // Temperature calibration
         bus.send_command_with_data(cmd::INPUT_TEMP, &[temp_val])?;
         bus.send_command_with_data(cmd::ACTIVE_TEMP, REG_DATA_ACTIVE_TEMP)?;
 
-        // Panel setting configuration
-        bus.send_command_with_data(cmd::PSR, &psr_val)?;
+        // Driver variant configuration
+        match self.driver_variant {
+            PervasiveDriverVariant::DriverC => {
+                bus.send_command_with_data(cmd::PSR, &psr_val)?;
+            }
+            PervasiveDriverVariant::DriverF => {
+                bus.send_command_with_data(0x4D, &[0x55])?;
+                bus.send_command_with_data(0xE9, &[0x02])?;
+            }
+        }
 
         // Fast update VCOM & Data Interval Setting
         if self.refresh_mode == PervasiveRefreshMode::Fast {
@@ -284,21 +320,21 @@ where
     fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.wait_busy(false)?;
+        bus.wait_busy_with_delay(delay, false)?;
         bus.send_command(cmd::POWER_ON)?;
-        bus.wait_busy(false)?;
+        bus.wait_busy_with_delay(delay, false)?;
         bus.send_command(cmd::DISPLAY_REFRESH)?;
-        bus.wait_busy(false)
+        bus.wait_busy_with_delay(delay, false)
     }
 
     fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         bus.send_command(cmd::POWER_OFF)?;
-        bus.wait_busy(false)
+        bus.wait_busy_with_delay(delay, false)
     }
 }

@@ -45,14 +45,30 @@ Key reference C++ source files to inspect:
     - Fast update mode: `(temperature_c as u8) | 0x40`.
   - `ACTIVE_TEMP` (`0xE0`): payload `&[0x02]`.
 
-### 5. Panel Setting Register (PSR `0x00`) Configuration
+### 5. Driver IC Variant & Panel Setting Register (PSR `0x00`) Configuration
 - **Rule**:
   - Soft reset: `cmd::PSR` (`0x00`) with payload `&[0x0E]`.
-  - Normal update PSR: `[psr[0], psr[1]]`.
-  - Fast update PSR: `[psr[0] | 0x10, psr[1] | 0x02]`.
+  - `PervasiveDriverVariant::DriverC` (e.g., `E2266KS0C1` / `EPD_266_KS_0C`):
+    - Normal update PSR: `[psr[0], psr[1]]`.
+    - Fast update PSR: `[psr[0] | 0x10, psr[1] | 0x02]`.
+  - `PervasiveDriverVariant::DriverF` (e.g., `E2290KS0F1` / `EPD_290_KS_0F`):
+    - Skips PSR `0x00` calibration bytes.
+    - Sends command `0x4D` with payload `&[0x55]`.
+    - Sends command `0xE9` with payload `&[0x02]`.
 
 ### 6. Secondary RAM Buffer Clearance
 - **Rule**: In normal update mode, writing `ColorChannel::BlackWhite` data to `0x10` must automatically clear `WRITE_RED_DATA` (`0x13`) with `0x00` bytes to prevent RAM noise on multi-buffer COGs.
+
+### 7. Pervasive Reference Type Aliases
+- **Rule**: Provide type aliases matching Pervasive C++ screen definitions:
+  - `pub type EPD_266_KS_0C = E2266KS0C1;`
+  - `pub type EPD_290_KS_0F = E2290KS0F1;`
+
+### 8. Extension Board J3 Jumper Configuration (EXT3-1)
+- **Rule**:
+  - Small displays ($\le 3.7"$, e.g., 2.9" `E2290KS0F1`): **J3 Jumper OPEN** ($10\,\mu\text{H}$ inductor path).
+  - Large displays ($> 3.7"$, e.g., 4.2", 9.7"): **J3 Jumper CLOSED** ($47\,\mu\text{H}$ inductor path).
+- **Troubleshooting**: If J3 is closed when driving a 2.9" display, DC-DC boost converter power sags during refresh, causing initialization failure or BUSY pin hangs.
 
 ---
 
