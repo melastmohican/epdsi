@@ -21,7 +21,9 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color (Adafruit 6373/6366, Active-Low BUSY) |
-| **Pervasive Displays** (`PervasiveDisplaysController`) | `E2266KS0C1` | 152 × 296 | Monochrome | Pervasive Displays 2.66" Monochrome E-Paper Display Panel |
+| **Pervasive Displays** (`PervasiveDisplaysController`) | `E2266KS0C1` (`EPD_266_KS_0C`), `E2290KS0F1` (`EPD_290_KS_0F`) | 152 × 296, 168 × 384 | Monochrome | Pervasive Displays 2.66" (Driver C) & 2.90" (Driver F) Panels |
+
+> **Hardware Note for EXT3-1 Extension Boards:** Ensure the **J3 jumper** is **OPEN** ($10\,\mu\text{H}$ inductor path) for panels $\le 3.7"$ (e.g. 2.66" and 2.9" panels). If J3 is closed ($47\,\mu\text{H}$ path), the DC-DC booster chokes during current bursts, causing voltage sags and BUSY pin hangs.
 
 ## Quick Start
 

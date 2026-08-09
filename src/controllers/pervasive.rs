@@ -150,6 +150,7 @@ impl PervasiveDisplaysController {
     }
 
     /// Writes previous and current frame data for embedded fast differential update mode.
+    #[allow(clippy::type_complexity)]
     pub fn write_fast_frame<SPI, DC, RST, BUSY>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,

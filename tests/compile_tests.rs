@@ -38,7 +38,9 @@ impl OutputPin for MockOutputPin {
 }
 
 #[derive(Debug)]
-struct MockInputPin;
+struct MockInputPin {
+    is_high: bool,
+}
 
 impl DigitalErrorType for MockInputPin {
     type Error = core::convert::Infallible;
@@ -46,11 +48,11 @@ impl DigitalErrorType for MockInputPin {
 
 impl InputPin for MockInputPin {
     fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
+        Ok(self.is_high)
     }
 
     fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
+        Ok(!self.is_high)
     }
 }
 
@@ -68,7 +70,7 @@ fn test_ssd1681_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
-    let busy = MockInputPin;
+    let busy = MockInputPin { is_high: false };
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
@@ -107,7 +109,7 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
-    let busy = MockInputPin;
+    let busy = MockInputPin { is_high: false };
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
@@ -147,7 +149,7 @@ fn test_pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
-    let busy = MockInputPin;
+    let busy = MockInputPin { is_high: true };
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
