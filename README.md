@@ -21,6 +21,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color (Adafruit 6373/6366, Active-Low BUSY) |
+| **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | 7-Color ACeP | 7.3" 7-Color (Seeed reTerminal E1002, Waveshare PhotoPainter) |
 | **Pervasive Displays** (`PervasiveDisplaysController`) | `E2266KS0C1` (`EPD_266_KS_0C`), `E2290KS0F1` (`EPD_290_KS_0F`) | 152 × 296, 168 × 384 | Monochrome | Pervasive Displays 2.66" (Driver C) & 2.90" (Driver F) Panels |
 
 > **Hardware Note for EXT3-1 Extension Boards:** Ensure the **J3 jumper** is **OPEN** ($10\,\mu\text{H}$ inductor path) for panels $\le 3.7"$ (e.g. 2.66" and 2.9" panels). If J3 is closed ($47\,\mu\text{H}$ path), the DC-DC booster chokes during current bursts, causing voltage sags and BUSY pin hangs.
@@ -106,6 +107,28 @@ epd.init(&mut delay).unwrap();
 epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
 epd.refresh(&mut delay).unwrap();
 epd.sleep(&mut delay).unwrap();
+```
+
+### 4. Usage Example (ED2208 Controller + GDEP073E01 7-Color Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Initialize SPI bus wrapper and ED2208 controller
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+
+// Build driver for 7.3" 800x480 7-Color EPD display (e.g. Seeed reTerminal E1002)
+let mut epd = EpdBuilder::<_, GDEP073E01>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// Clear display frame buffer (fill with White, 0x11)
+epd.clear_frame(ColorChannel::SevenColor, SevenColor::pack(SevenColor::White, SevenColor::White)).unwrap();
+
+// Send 4bpp packed 7-color frame buffer (192,000 bytes for 800x480)
+epd.write_frame(ColorChannel::SevenColor, &seven_color_frame_buf).unwrap();
+epd.refresh(&mut delay).unwrap();
 ```
 
 ## License

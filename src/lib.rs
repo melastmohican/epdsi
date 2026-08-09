@@ -18,4 +18,4 @@ pub mod traits;
 
 pub use bus::SpiBusWrapper;
 pub use driver::{EpdBuilder, EpdDriver};
-pub use traits::{ColorChannel, ColorMode, EpdController, EpdPanel};
+pub use traits::{ColorChannel, ColorMode, EpdController, EpdPanel, SevenColor};

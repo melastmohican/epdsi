@@ -17,6 +17,35 @@ pub enum ColorMode {
     SevenColor,
 }
 
+/// 7-Color ACeP / Spectra 6 Palette Color definitions for 4-bit per pixel displays (such as ED2208).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SevenColor {
+    /// Black color (0x0)
+    Black = 0x00,
+    /// White color (0x1)
+    White = 0x01,
+    /// Yellow color (0x2)
+    Yellow = 0x02,
+    /// Red color (0x3)
+    Red = 0x03,
+    /// Orange color (0x4)
+    Orange = 0x04,
+    /// Blue color (0x5)
+    Blue = 0x05,
+    /// Green color (0x6)
+    Green = 0x06,
+    /// Clean / Clear color (0x7)
+    Clean = 0x07,
+}
+
+impl SevenColor {
+    /// Packs two 4-bit `SevenColor` pixels into a single 8-bit byte (`[high_pixel, low_pixel]`).
+    pub const fn pack(pixel_high: Self, pixel_low: Self) -> u8 {
+        ((pixel_high as u8) << 4) | (pixel_low as u8)
+    }
+}
+
 /// Identifies the frame buffer/RAM color channel being targeted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorChannel {
