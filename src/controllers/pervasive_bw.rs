@@ -1,4 +1,6 @@
-//! Pervasive Displays E-Paper Display Controller implementation.
+//! Pervasive Displays BW/BWR (Black/White, Black/White/Red or Yellow) E-Paper Display Controller
+//! implementation (DriverC/DriverF COG family). For the Spectra-4/BWRY family, see
+//! [`crate::controllers::pervasive_bwry::PervasiveBwryController`].
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -53,9 +55,9 @@ pub enum PervasiveDriverVariant {
     DriverF,
 }
 
-/// Pervasive Displays COG Controller IC driver implementation.
+/// Pervasive Displays BW/BWR COG Controller IC driver implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PervasiveDisplaysController {
+pub struct PervasiveBwController {
     width: u32,
     height: u32,
     temperature_c: i8,
@@ -65,7 +67,7 @@ pub struct PervasiveDisplaysController {
     auto_clear_secondary: bool,
 }
 
-impl Default for PervasiveDisplaysController {
+impl Default for PervasiveBwController {
     fn default() -> Self {
         Self {
             width: 0,
@@ -79,8 +81,8 @@ impl Default for PervasiveDisplaysController {
     }
 }
 
-impl PervasiveDisplaysController {
-    /// Creates a new Pervasive Displays controller instance with target resolution.
+impl PervasiveBwController {
+    /// Creates a new Pervasive Displays BW/BWR controller instance with target resolution.
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -193,7 +195,7 @@ impl PervasiveDisplaysController {
 }
 
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>>
-    for PervasiveDisplaysController
+    for PervasiveBwController
 where
     SPI: SpiDevice,
     DC: OutputPin,

@@ -102,7 +102,7 @@ impl DelayNs for DummyDelay {
 
 #[test]
 fn test_pervasive_controller_configuration() {
-    let controller = PervasiveDisplaysController::new(152, 296)
+    let controller = PervasiveBwController::new(152, 296)
         .with_temperature(18)
         .with_refresh_mode(PervasiveRefreshMode::Fast)
         .with_psr([0xC0, 0x80])
@@ -111,7 +111,7 @@ fn test_pervasive_controller_configuration() {
     assert_eq!(controller.temperature(), 18);
     assert_eq!(controller.refresh_mode(), PervasiveRefreshMode::Fast);
 
-    let mut controller_mut = PervasiveDisplaysController::new(152, 296);
+    let mut controller_mut = PervasiveBwController::new(152, 296);
     controller_mut.set_temperature(30);
     controller_mut.set_refresh_mode(PervasiveRefreshMode::Normal);
     assert_eq!(controller_mut.temperature(), 30);
@@ -123,7 +123,7 @@ fn test_pervasive_refresh_and_sleep_command_payload_parity() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-    let mut controller = PervasiveDisplaysController::new(152, 296);
+    let mut controller = PervasiveBwController::new(152, 296);
     let mut delay = DummyDelay;
 
     // Test trigger_refresh
@@ -159,7 +159,7 @@ fn test_pervasive_init_sequence_normal_vs_fast() {
         let bus_backend = RecordingSpiBus::new();
         let dc = TestDc(&bus_backend);
         let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-        let mut controller = PervasiveDisplaysController::new(152, 296).with_temperature(25);
+        let mut controller = PervasiveBwController::new(152, 296).with_temperature(25);
         let mut delay = DummyDelay;
 
         controller.init_sequence(&mut bus, &mut delay).unwrap();
@@ -185,7 +185,7 @@ fn test_pervasive_init_sequence_normal_vs_fast() {
         let bus_backend = RecordingSpiBus::new();
         let dc = TestDc(&bus_backend);
         let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-        let mut controller = PervasiveDisplaysController::new(152, 296)
+        let mut controller = PervasiveBwController::new(152, 296)
             .with_temperature(25)
             .with_refresh_mode(PervasiveRefreshMode::Fast);
         let mut delay = DummyDelay;
@@ -216,7 +216,7 @@ fn test_pervasive_write_frame_and_fast_frame() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-    let mut controller = PervasiveDisplaysController::new(152, 296);
+    let mut controller = PervasiveBwController::new(152, 296);
 
     let frame_data = [0xAA; 4];
     controller
@@ -263,7 +263,7 @@ fn test_pervasive_driver_f_e2290ks0f1_init_sequence() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-    let mut controller = PervasiveDisplaysController::new(E2290KS0F1::WIDTH, E2290KS0F1::HEIGHT)
+    let mut controller = PervasiveBwController::new(E2290KS0F1::WIDTH, E2290KS0F1::HEIGHT)
         .with_driver_variant(PervasiveDriverVariant::DriverF)
         .with_temperature(25);
     let mut delay = DummyDelay;

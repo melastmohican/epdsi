@@ -153,7 +153,7 @@ fn test_pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering() {
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
-    let controller = PervasiveDisplaysController::new(E2266KS0C1::WIDTH, E2266KS0C1::HEIGHT);
+    let controller = PervasiveBwController::new(E2266KS0C1::WIDTH, E2266KS0C1::HEIGHT);
     let mut driver = EpdBuilder::<_, E2266KS0C1>::new(controller).build(bus);
 
     assert_eq!(driver.width(), 152);
