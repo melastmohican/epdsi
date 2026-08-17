@@ -1,4 +1,4 @@
-//! SSD1681 E-Paper Display Controller implementation.
+//! SSD168x (SSD1680 & SSD1681) E-Paper Display Controller implementation.
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -7,7 +7,7 @@ use embedded_hal::spi::SpiDevice;
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController};
 
-/// SSD1681 Command Definitions
+/// SSD168x Command Definitions
 pub mod cmd {
     /// Driver output control
     pub const DRIVER_CONTROL: u8 = 0x01;
@@ -23,6 +23,8 @@ pub mod cmd {
     pub const TEMP_CONTROL: u8 = 0x18;
     /// Master activation command
     pub const MASTER_ACTIVATE: u8 = 0x20;
+    /// Display update control 1
+    pub const DISPLAY_UPDATE_CTRL1: u8 = 0x21;
     /// Display update control 2
     pub const UPDATE_DISPLAY_CTRL2: u8 = 0x22;
     /// Write Black/White RAM data
@@ -41,21 +43,105 @@ pub mod cmd {
     pub const SET_RAMYCNT: u8 = 0x4F;
 }
 
-/// SSD1681 Controller IC driver configuration.
-#[derive(Debug, Clone, Copy)]
-pub struct Ssd1681Controller {
-    width: u32,
-    height: u32,
+/// SSD168x IC variant family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Ssd168xVariant {
+    /// SSD1680 IC variant (supports 176×296 RAM space, uses explicit power-stage commands 0xE0/0x83).
+    #[default]
+    Ssd1680,
+    /// SSD1681 IC variant (supports 200×200 RAM space, uses direct display update trigger 0xF7/0xFC).
+    Ssd1681,
 }
 
-impl Ssd1681Controller {
-    /// Creates a new SSD1681 controller configured for target dimensions.
+/// Display refresh operating mode for SSD168x controllers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Ssd168xRefreshMode {
+    /// Full display update using the panel's OTP/full waveform LUT (`UPDATE_DISPLAY_CTRL2 = 0xF7`).
+    #[default]
+    Full,
+    /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFC`).
+    Partial,
+}
+
+/// SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
+#[derive(Debug, Clone, Copy)]
+pub struct Ssd168xController {
+    width: u32,
+    height: u32,
+    variant: Ssd168xVariant,
+    refresh_mode: Ssd168xRefreshMode,
+}
+
+/// Backwards-compatible type alias for SSD1680 controller.
+pub type Ssd1680Controller = Ssd168xController;
+/// Backwards-compatible type alias for SSD1681 controller.
+pub type Ssd1681Controller = Ssd168xController;
+
+/// Backwards-compatible type alias for SSD1680 refresh mode.
+pub type Ssd1680RefreshMode = Ssd168xRefreshMode;
+/// Backwards-compatible type alias for SSD1681 refresh mode.
+pub type Ssd1681RefreshMode = Ssd168xRefreshMode;
+
+impl Ssd168xController {
+    /// Creates a new SSD1680 controller instance configured for target display dimensions.
+    pub fn new_ssd1680(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            variant: Ssd168xVariant::Ssd1680,
+            refresh_mode: Ssd168xRefreshMode::default(),
+        }
+    }
+
+    /// Creates a new SSD1681 controller instance configured for target display dimensions.
+    pub fn new_ssd1681(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            variant: Ssd168xVariant::Ssd1681,
+            refresh_mode: Ssd168xRefreshMode::default(),
+        }
+    }
+
+    /// Creates a new SSD168x controller with target dimensions and variant.
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
+        Self::new_ssd1680(width, height)
+    }
+
+    /// Sets driver IC variant (builder method).
+    pub fn with_variant(mut self, variant: Ssd168xVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    /// Sets driver IC variant.
+    pub fn set_variant(&mut self, variant: Ssd168xVariant) {
+        self.variant = variant;
+    }
+
+    /// Returns current driver IC variant.
+    pub fn variant(&self) -> Ssd168xVariant {
+        self.variant
+    }
+
+    /// Sets display refresh operating mode (builder method).
+    pub fn with_refresh_mode(mut self, mode: Ssd168xRefreshMode) -> Self {
+        self.refresh_mode = mode;
+        self
+    }
+
+    /// Sets display refresh operating mode.
+    pub fn set_refresh_mode(&mut self, mode: Ssd168xRefreshMode) {
+        self.refresh_mode = mode;
+    }
+
+    /// Returns current display refresh mode.
+    pub fn refresh_mode(&self) -> Ssd168xRefreshMode {
+        self.refresh_mode
     }
 }
 
-impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd1681Controller
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd168xController
 where
     SPI: SpiDevice,
     DC: OutputPin,
@@ -78,18 +164,23 @@ where
         let h_high = (((self.height - 1) >> 8) & 0xFF) as u8;
         bus.send_command_with_data(cmd::DRIVER_CONTROL, &[h_low, h_high, 0x00])?;
 
+        // Border Waveform Control
+        bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x05])?;
+
+        // SSD1680 specific: Display Update Control 1 (RAM content option / source output mode)
+        if self.variant == Ssd168xVariant::Ssd1680 {
+            bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x80])?;
+        }
+
+        // Internal Temperature Sensor Selection
+        bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])?;
+
         // Data Entry Mode: Increment X, Increment Y
         bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x03])?;
 
         // Set RAM Area to full display frame
         self.set_window(bus, 0, 0, self.width - 1, self.height - 1)?;
         self.set_cursor(bus, 0, 0)?;
-
-        // Border Waveform Control
-        bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x05])?;
-
-        // Internal Temperature Sensor Selection
-        bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])?;
 
         bus.wait_busy(true)?;
         Ok(())
@@ -171,10 +262,34 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        // Display Mode 1 update sequence
-        bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xF7])?;
-        bus.send_command(cmd::MASTER_ACTIVATE)?;
-        bus.wait_busy(true)
+        let mode_byte = match self.refresh_mode {
+            Ssd168xRefreshMode::Full => 0xF7,
+            Ssd168xRefreshMode::Partial => 0xFC,
+        };
+
+        match self.variant {
+            Ssd168xVariant::Ssd1680 => {
+                // Power on sequence
+                bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xE0])?;
+                bus.send_command(cmd::MASTER_ACTIVATE)?;
+                bus.wait_busy(true)?;
+
+                // Display update sequence (Full: OTP LUT, Partial: built-in fast LUT)
+                bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
+                bus.send_command(cmd::MASTER_ACTIVATE)?;
+                bus.wait_busy(true)?;
+
+                // Power off sequence
+                bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x83])?;
+                bus.send_command(cmd::MASTER_ACTIVATE)?;
+                bus.wait_busy(true)
+            }
+            Ssd168xVariant::Ssd1681 => {
+                bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
+                bus.send_command(cmd::MASTER_ACTIVATE)?;
+                bus.wait_busy(true)
+            }
+        }
     }
 
     fn sleep<DELAY: DelayNs>(
