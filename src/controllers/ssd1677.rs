@@ -121,10 +121,7 @@ where
         bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])?;
 
         // Booster Soft-Start Control (wider payload than SSD1680/SSD1681)
-        bus.send_command_with_data(
-            cmd::BOOSTER_SOFT_START,
-            &[0xAE, 0xC7, 0xC3, 0xC0, 0x80],
-        )?;
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0xAE, 0xC7, 0xC3, 0xC0, 0x80])?;
 
         // Driver output control: setting display height
         let h_low = ((self.height - 1) & 0xFF) as u8;

@@ -1,4 +1,9 @@
 //! Panel specification for Pervasive Displays E2290KS0F1 (2.9" 384x168 Monochrome display panel).
+//!
+//! ### Vendor References
+//! - [Product page](https://www.pervasivedisplays.com/products/2-9-e-ink-displays/)
+//! - [Datasheet flyer (PDF)](https://www.pervasivedisplays.com/wp-content/uploads/2025/10/Flyer_E2290KS0F1_20241210.pdf) —
+//!   confirms resolution `384(H) x 168(V) pixel`, active area 67.584 × 29.568 mm.
 
 use crate::traits::{ColorMode, EpdPanel};
 

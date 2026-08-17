@@ -194,8 +194,7 @@ impl PervasiveBwController {
     }
 }
 
-impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>>
-    for PervasiveBwController
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for PervasiveBwController
 where
     SPI: SpiDevice,
     DC: OutputPin,

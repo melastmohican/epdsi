@@ -6,6 +6,12 @@
 //!   `= 400*300*2/8`, exactly matching the visible pixel count).
 //! - **Color Mode**: Spectra-4 (Black, White, Red, Yellow), 2 bits-per-pixel packed.
 //! - **Busy Polarity**: Active-low (busy while LOW).
+//!
+//! ### Vendor References
+//! - [Product page](https://www.pervasivedisplays.com/products/4-2-e-ink-displays/#spectra-4) —
+//!   confirms resolution 400 × 300 pixels.
+//! - [Datasheet flyer (PDF)](https://www.pervasivedisplays.com/wp-content/uploads/2025/10/Flyer_E2417QS0A3_20250407.pdf) —
+//!   confirms resolution `400(V) x 300(H) pixel`, active area 84.8 × 63.6 mm.
 
 use crate::traits::{ColorMode, EpdPanel};
 

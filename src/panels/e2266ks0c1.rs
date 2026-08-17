@@ -1,4 +1,9 @@
 //! Panel specification for Pervasive Displays E2266KS0C1 (2.66" 296x152 Monochrome display panel).
+//!
+//! ### Vendor References
+//! - [Product page](https://www.pervasivedisplays.com/products/2-66-e-ink-displays/)
+//! - [Datasheet flyer (PDF)](https://www.pervasivedisplays.com/wp-content/uploads/2025/10/Flyer_E2266KS0C1_20241209.pdf) —
+//!   confirms resolution `296(H) x 152(V) pixel`, active area 60.088 × 30.704 mm.
 
 use crate::traits::{ColorMode, EpdPanel};
 

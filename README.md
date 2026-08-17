@@ -26,7 +26,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
 | **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | 7-Color ACeP | 7.3" 7-Color (Seeed reTerminal E1002, Waveshare PhotoPainter) |
 | **Pervasive Displays** (`PervasiveBwController`) | `E2266KS0C1` (`EPD_266_KS_0C`), `E2290KS0F1` (`EPD_290_KS_0F`) | 152 × 296, 168 × 384 | Monochrome | Pervasive Displays 2.66" (Driver C) & 2.90" (Driver F) Panels |
-| **Pervasive Displays BWRY** (`PervasiveBwryController`) | `E2154QS0F1` (`EPD_152_QS_06`), `E2417QS0A3` (`EPD_417_QS_0A`) | 200 × 200 (152×152 visible), 400 × 300 | Quad-Color (Spectra-4) | Pervasive Displays 1.54" (Driver 6) & 4.2" (Driver A), OTP-sourced registers, Active-Low BUSY |
+| **Pervasive Displays BWRY** (`PervasiveBwryController`) | `E2154QS0F1` (`EPD_154_QS_0F`), `E2417QS0A3` (`EPD_417_QS_0A`) | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) | Pervasive Displays 1.54" (Driver F) & 4.2" (Driver A), OTP-sourced registers read via a bit-banged 3-wire handshake (`epdsi::bus3::Spi3Bus`), Active-Low BUSY |
 
 > **Hardware Note for EXT3-1 Extension Boards:** Ensure the **J3 jumper** is **OPEN** ($10\,\mu\text{H}$ inductor path) for panels $\le 3.7"$ (e.g. 2.66" and 2.9" panels). If J3 is closed ($47\,\mu\text{H}$ path), the DC-DC booster chokes during current bursts, causing voltage sags and BUSY pin hangs.
 
@@ -196,19 +196,25 @@ epd.sleep(&mut delay).unwrap();
 ```rust,ignore
 use epdsi::prelude::*;
 
-// Initialize SPI bus wrapper and Pervasive BWRY controller. `init()` performs the OTP read
-// handshake against the physical panel, so this must run against real hardware (not a mock).
-let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
-let controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
-    .with_variant(PervasiveBwryVariant::Driver6)
+// The BWRY OTP register read is a bit-banged 3-wire handshake (SCK + a single bidirectional
+// DATA line), NOT the hardware SPI peripheral — the panel drives its response back on MOSI, and
+// MISO is never used. `sck`/`mosi` must start as plain GPIO here (not SPI-function-bound) so
+// `read_otp` can flip `mosi`'s direction; `mosi` must implement `epdsi::bus3::DynamicPin`.
+let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
+    .with_variant(PervasiveBwryVariant::DriverF)
     .with_temperature(25);
+let mut bus3 = Spi3Bus::new(cs_pin, sck_pin, mosi_pin, dc_pin, rst_pin, busy_pin);
+controller.read_otp(&mut bus3, &mut delay).unwrap();
+let (cs_pin, sck_pin, mosi_pin, dc_pin, rst_pin, busy_pin) = bus3.release();
 
-// Build driver for Pervasive Displays 1.54" Spectra-4 (BWRY) display
+// Reconfigure sck_pin/mosi_pin into the hardware SPI peripheral's function, build the SPI
+// device, then wrap it with the normal 4-wire SpiBusWrapper for everything else.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
 let mut epd = EpdBuilder::<_, E2154QS0F1>::new(controller).build(epd_bus);
 
 epd.init(&mut delay).unwrap();
 
-// Send 2bpp packed BWRY frame buffer (10,000 bytes for the 200x200 RAM buffer)
+// Send 2bpp packed BWRY frame buffer (5,776 bytes for the 152x152 panel)
 epd.write_frame(ColorChannel::BlackWhite, &bwry_frame_buf).unwrap();
 epd.refresh(&mut delay).unwrap();
 epd.sleep(&mut delay).unwrap();

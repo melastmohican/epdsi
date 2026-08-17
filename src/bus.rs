@@ -143,49 +143,6 @@ where
         self.send_data(data)
     }
 
-    /// Reads a slice of data bytes over SPI with DC pin driven HIGH (symmetric counterpart to `send_data`).
-    pub fn read_data(
-        &mut self,
-        buf: &mut [u8],
-    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
-        if buf.is_empty() {
-            return Ok(());
-        }
-        self.dc.set_high().map_err(EpdBusError::Dc)?;
-        self.spi.read(buf).map_err(EpdBusError::Spi)
-    }
-
-    /// Sends a command byte, then reads a response slice (symmetric counterpart to `send_command_with_data`).
-    pub fn send_command_then_read(
-        &mut self,
-        command: u8,
-        buf: &mut [u8],
-    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
-        self.send_command(command)?;
-        self.read_data(buf)
-    }
-
-    /// Reads and discards `count` bytes (used for OTP dummy-byte skips / bank-offset seeking).
-    pub fn discard_read_bytes(
-        &mut self,
-        count: usize,
-    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
-        if count == 0 {
-            return Ok(());
-        }
-        self.dc.set_high().map_err(EpdBusError::Dc)?;
-        let mut chunk = [0u8; 64];
-        let mut remaining = count;
-        while remaining > 0 {
-            let write_len = remaining.min(chunk.len());
-            self.spi
-                .read(&mut chunk[..write_len])
-                .map_err(EpdBusError::Spi)?;
-            remaining -= write_len;
-        }
-        Ok(())
-    }
-
     /// Repeatedly sends a byte `count` times with DC pin driven HIGH.
     pub fn send_data_repeated(
         &mut self,

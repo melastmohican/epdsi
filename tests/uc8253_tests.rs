@@ -213,10 +213,7 @@ fn test_uc8253_write_frame_channel_routing() {
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
-        vec![
-            SpiRecord::Command(0x13),
-            SpiRecord::Data(vec![0xAA, 0xBB]),
-        ]
+        vec![SpiRecord::Command(0x13), SpiRecord::Data(vec![0xAA, 0xBB]),]
     );
 
     bus_backend.records.borrow_mut().clear();

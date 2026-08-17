@@ -133,11 +133,11 @@ fn test_ssd1680_init_sequence() {
             SpiRecord::Data(vec![0x80]),
             SpiRecord::Command(0x11), // DATA_ENTRY_MODE
             SpiRecord::Data(vec![0x03]),
-            SpiRecord::Command(0x44), // SET_RAMXPOS
-            SpiRecord::Data(vec![0x00, 0x0F]), // (122-1)/8 = 15 = 0x0F
-            SpiRecord::Command(0x45), // SET_RAMYPOS
+            SpiRecord::Command(0x44),                      // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x0F]),             // (122-1)/8 = 15 = 0x0F
+            SpiRecord::Command(0x45),                      // SET_RAMYPOS
             SpiRecord::Data(vec![0x00, 0x00, 0xF9, 0x00]), // 249 = 0xF9
-            SpiRecord::Command(0x4E), // SET_RAMXCNT
+            SpiRecord::Command(0x4E),                      // SET_RAMXCNT
             SpiRecord::Data(vec![0x00]),
             SpiRecord::Command(0x4F), // SET_RAMYCNT
             SpiRecord::Data(vec![0x00, 0x00]),
@@ -157,10 +157,7 @@ fn test_ssd1680_write_frame_channel_routing() {
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
-        vec![
-            SpiRecord::Command(0x24),
-            SpiRecord::Data(vec![0xAA, 0xBB]),
-        ]
+        vec![SpiRecord::Command(0x24), SpiRecord::Data(vec![0xAA, 0xBB]),]
     );
 
     bus_backend.records.borrow_mut().clear();

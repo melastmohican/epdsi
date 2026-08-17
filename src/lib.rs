@@ -9,6 +9,7 @@
 #![deny(unsafe_code)]
 
 pub mod bus;
+pub mod bus3;
 pub mod controllers;
 pub mod driver;
 pub mod graphics;
@@ -17,5 +18,6 @@ pub mod prelude;
 pub mod traits;
 
 pub use bus::SpiBusWrapper;
+pub use bus3::Spi3Bus;
 pub use driver::{EpdBuilder, EpdDriver};
 pub use traits::{ColorChannel, ColorMode, EpdController, EpdPanel, SevenColor};
