@@ -2,15 +2,16 @@
 //!
 //! ### Hardware Notes:
 //! - **Panel Model**: `ZJY122250-0213AJH-E5` (FPC ribbon cable model stamp)
-//! - **Good Display Equivalent**: `GDEY0213F51` (referenced in GxEPD2 library under `GxEPD2_4C` 4-color family as `GxEPD2_213c_GDEY0213F51`)
-//! - **Adafruit Hardware**: Used in Adafruit Product IDs 6373 and 6366 (Adafruit ThinkInk 2.13" Quad-Color display breakout: Black, White, Red, Yellow)
+//! - **Good Display Equivalent**: `GDEY0213F51` ([Product Page](https://www.good-display.com/product/463.html), referenced in GxEPD2 library under `GxEPD2_4C` 4-color family as `GxEPD2_213c_GDEY0213F51`)
+//! - **Seeed Studio Hardware**: [2.13" Quadruple Color ePaper Display (122x250)](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html) (SKU: 104990666)
+//! - **Adafruit Hardware**: Used in Adafruit Product IDs [6373](https://www.adafruit.com/product/6373) and [6366](https://www.adafruit.com/product/6366) (Adafruit ThinkInk 2.13" Quad-Color display breakout: Black, White, Red, Yellow)
 //! - **Controller IC**: JD79661
 //! - **Native Resolution**: 122 x 250 pixels
 //! - **RAM Alignment**: 128 pixels (32 bytes per row) in JD79661 RAM layout (8,000 bytes total per 2bpp QuadColor frame).
 
 use crate::traits::{ColorMode, EpdPanel};
 
-/// Physical panel driver specification for ZJY122250-0213AJH-E5 / Good Display GDEY0213F51 (Adafruit 6373/6366 Quad-Color).
+/// Physical panel driver specification for ZJY122250-0213AJH-E5 / Good Display [GDEY0213F51](https://www.good-display.com/product/463.html) / Seeed Studio [5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html) / Adafruit [6373](https://www.adafruit.com/product/6373)/[6366](https://www.adafruit.com/product/6366).
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ZJY122250_0213AJH_E5;
