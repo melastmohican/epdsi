@@ -57,9 +57,20 @@ pub enum Ssd168xVariant {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Ssd168xRefreshMode {
     /// Full display update using the panel's OTP/full waveform LUT (`UPDATE_DISPLAY_CTRL2 = 0xF7`).
+    ///
+    /// The only mode usable on Tri-Color panels such as the `GDEM0154Z90`.
     #[default]
     Full,
     /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFC`).
+    ///
+    /// **Monochrome panels only** (e.g. `GDEM0213B74`). The fast LUT does not exist for colour
+    /// panels: the red pigment has no differential waveform, so on a Tri-Color panel this runs at
+    /// full-refresh speed *and* drops all red content, because the fast path only rewrites the
+    /// Black/White RAM. Keep colour panels on [`Ssd168xRefreshMode::Full`].
+    ///
+    /// To update only part of a colour panel, narrow the RAM window with `set_window`/`set_cursor`
+    /// and write both colour channels for that region, still refreshing on `Full`. This matches
+    /// GxEPD2's `GxEPD2_154_Z90c`, where `partial_refresh_time == full_refresh_time`.
     Partial,
 }
 

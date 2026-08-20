@@ -19,7 +19,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 
 | Controller IC | Supported Panels | Resolution | Color Mode | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full/Partial refresh |
+| **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
 | **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74` | 122 × 250 | Monochrome | 2.13" Monochrome (Adafruit 6383), Full/Partial refresh |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | 240 × 416 | Monochrome | 3.7" Monochrome (Adafruit 6395), Active-Low BUSY, Full/FastFull/Partial/FastPartial refresh |
@@ -29,6 +29,29 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | **Pervasive Displays BWRY** (`PervasiveBwryController`) | `E2154QS0F1` (`EPD_154_QS_0F`), `E2417QS0A3` (`EPD_417_QS_0A`) | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) | Pervasive Displays 1.54" (Driver F) & 4.2" (Driver A), OTP-sourced registers read via a bit-banged 3-wire handshake (`epdsi::bus3::Spi3Bus`), Active-Low BUSY |
 
 > **Hardware Note for EXT3-1 Extension Boards:** Ensure the **J3 jumper** is **OPEN** ($10\,\mu\text{H}$ inductor path) for panels $\le 3.7"$ (e.g. 2.66" and 2.9" panels). If J3 is closed ($47\,\mu\text{H}$ path), the DC-DC booster chokes during current bursts, causing voltage sags and BUSY pin hangs.
+
+### Tri-Color panels and partial refresh
+
+Colour panels have **no fast/differential waveform**. The red (or yellow) pigment is a
+heavier particle that needs the full OTP waveform to migrate, so *every* update on a
+Tri-Color or Quad-Color panel takes seconds — roughly 14 s on the `GDEM0154Z90`.
+
+`Ssd168xRefreshMode::Partial` drives `UPDATE_DISPLAY_CTRL2 = 0xFC`, selecting the
+controller's built-in fast LUT. That LUT only exists for monochrome panels. On a colour
+panel it is **not** a speed-up and actively breaks the image: the update runs at full-refresh
+speed anyway, and because the fast path only rewrites the Black/White RAM, all red content
+is dropped. Keep colour panels on `Ssd168xRefreshMode::Full`.
+
+Region-limited updates still work on colour panels — narrow the RAM window with
+`set_window`/`set_cursor`, write **both** colour channels for that region, then refresh on
+the `Full` waveform. Only the windowed area is redrawn, but it costs a full refresh. This
+mirrors GxEPD2's `GxEPD2_154_Z90c`, where `partial_refresh_time == full_refresh_time` and
+`hasFastPartialUpdate == false`.
+
+For genuine sub-second differential updates, use a monochrome panel: `GDEM0213B74`
+(`Ssd1680RefreshMode::Partial`), `GDEY037T03` (`Uc8253RefreshMode::FastPartial`),
+`GDEQ0426T82` (`Ssd1677RefreshMode::Partial`), or the Pervasive Displays panels via
+`PervasiveRefreshMode::Fast` and `write_fast_frame`.
 
 ## Quick Start
 
