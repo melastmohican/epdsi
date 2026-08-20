@@ -70,7 +70,7 @@ fn test_ssd1681_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
-    let busy = MockInputPin { is_high: false };
+    let busy = MockInputPin { is_high: true };
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);
@@ -109,7 +109,7 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
     let rst = MockOutputPin;
-    let busy = MockInputPin { is_high: false };
+    let busy = MockInputPin { is_high: true };
     let mut delay = MockDelay;
 
     let bus = SpiBusWrapper::new(spi, dc, rst, busy);

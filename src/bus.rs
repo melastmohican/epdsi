@@ -69,14 +69,14 @@ where
         &mut self,
         busy_active_high: bool,
     ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error> {
-        let mut retries = 0u32;
+        let mut retries = 0u64;
         loop {
             let is_busy = self.busy.is_high().map_err(EpdBusError::Busy)?;
             if is_busy == busy_active_high {
                 // Yield/spin briefly
                 core::hint::spin_loop();
                 retries += 1;
-                if retries > 10_000_000 {
+                if retries > 1_000_000_000 {
                     // Safety timeout after max iterations
                     break;
                 }
@@ -101,8 +101,8 @@ where
             if is_busy == busy_active_high {
                 delay.delay_ms(1);
                 retries += 1;
-                if retries > 1_500 {
-                    // Safety timeout after 1,500ms (1.5 seconds)
+                if retries > 60_000 {
+                    // Safety timeout after 60,000ms (60 seconds)
                     break;
                 }
             } else {
