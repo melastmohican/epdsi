@@ -63,7 +63,7 @@ pub enum Ssd168xRefreshMode {
     Partial,
 }
 
-/// SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
+/// Generic SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
 #[derive(Debug, Clone, Copy)]
 pub struct Ssd168xController {
     width: u32,
@@ -72,15 +72,82 @@ pub struct Ssd168xController {
     refresh_mode: Ssd168xRefreshMode,
 }
 
-/// Backwards-compatible type alias for SSD1680 controller.
-pub type Ssd1680Controller = Ssd168xController;
-/// Backwards-compatible type alias for SSD1681 controller.
-pub type Ssd1681Controller = Ssd168xController;
+/// Dedicated controller for SSD1680 IC (176×296 RAM, power stage 0xE0/0x83).
+#[derive(Debug, Clone, Copy)]
+pub struct Ssd1680Controller {
+    inner: Ssd168xController,
+}
+
+/// Dedicated controller for SSD1681 IC (200×200 RAM, direct trigger 0xF7/0xFC).
+#[derive(Debug, Clone, Copy)]
+pub struct Ssd1681Controller {
+    inner: Ssd168xController,
+}
 
 /// Backwards-compatible type alias for SSD1680 refresh mode.
 pub type Ssd1680RefreshMode = Ssd168xRefreshMode;
 /// Backwards-compatible type alias for SSD1681 refresh mode.
 pub type Ssd1681RefreshMode = Ssd168xRefreshMode;
+
+impl Ssd1680Controller {
+    /// Creates a new SSD1680 controller instance configured for target display dimensions.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            inner: Ssd168xController::new_ssd1680(width, height),
+        }
+    }
+
+    /// Sets display refresh operating mode (builder method).
+    pub fn with_refresh_mode(mut self, mode: Ssd168xRefreshMode) -> Self {
+        self.inner = self.inner.with_refresh_mode(mode);
+        self
+    }
+
+    /// Sets display refresh operating mode.
+    pub fn set_refresh_mode(&mut self, mode: Ssd168xRefreshMode) {
+        self.inner.set_refresh_mode(mode);
+    }
+
+    /// Returns current display refresh mode.
+    pub fn refresh_mode(&self) -> Ssd168xRefreshMode {
+        self.inner.refresh_mode()
+    }
+
+    /// Access underlying generic controller.
+    pub fn into_inner(self) -> Ssd168xController {
+        self.inner
+    }
+}
+
+impl Ssd1681Controller {
+    /// Creates a new SSD1681 controller instance configured for target display dimensions.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            inner: Ssd168xController::new_ssd1681(width, height),
+        }
+    }
+
+    /// Sets display refresh operating mode (builder method).
+    pub fn with_refresh_mode(mut self, mode: Ssd168xRefreshMode) -> Self {
+        self.inner = self.inner.with_refresh_mode(mode);
+        self
+    }
+
+    /// Sets display refresh operating mode.
+    pub fn set_refresh_mode(&mut self, mode: Ssd168xRefreshMode) {
+        self.inner.set_refresh_mode(mode);
+    }
+
+    /// Returns current display refresh mode.
+    pub fn refresh_mode(&self) -> Ssd168xRefreshMode {
+        self.inner.refresh_mode()
+    }
+
+    /// Access underlying generic controller.
+    pub fn into_inner(self) -> Ssd168xController {
+        self.inner
+    }
+}
 
 impl Ssd168xController {
     /// Creates a new SSD1680 controller instance configured for target display dimensions.
@@ -104,8 +171,13 @@ impl Ssd168xController {
     }
 
     /// Creates a new SSD168x controller with target dimensions and variant.
-    pub fn new(width: u32, height: u32) -> Self {
-        Self::new_ssd1680(width, height)
+    pub fn new(width: u32, height: u32, variant: Ssd168xVariant) -> Self {
+        Self {
+            width,
+            height,
+            variant,
+            refresh_mode: Ssd168xRefreshMode::default(),
+        }
     }
 
     /// Sets driver IC variant (builder method).
@@ -141,6 +213,152 @@ impl Ssd168xController {
     }
 }
 
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd1680Controller
+where
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin,
+{
+    type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
+
+    fn init_sequence<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.init_sequence(bus, delay)
+    }
+
+    fn set_window(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x_start: u32,
+        y_start: u32,
+        x_end: u32,
+        y_end: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner.set_window(bus, x_start, y_start, x_end, y_end)
+    }
+
+    fn set_cursor(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x: u32,
+        y: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner.set_cursor(bus, x, y)
+    }
+
+    fn write_frame(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        self.inner.write_frame(bus, channel, data)
+    }
+
+    fn write_frame_pattern(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        byte: u8,
+        count: usize,
+    ) -> Result<(), Self::Error> {
+        self.inner.write_frame_pattern(bus, channel, byte, count)
+    }
+
+    fn trigger_refresh<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.trigger_refresh(bus, delay)
+    }
+
+    fn sleep<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.sleep(bus, delay)
+    }
+}
+
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd1681Controller
+where
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin,
+{
+    type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
+
+    fn init_sequence<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.init_sequence(bus, delay)
+    }
+
+    fn set_window(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x_start: u32,
+        y_start: u32,
+        x_end: u32,
+        y_end: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner.set_window(bus, x_start, y_start, x_end, y_end)
+    }
+
+    fn set_cursor(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x: u32,
+        y: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner.set_cursor(bus, x, y)
+    }
+
+    fn write_frame(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        self.inner.write_frame(bus, channel, data)
+    }
+
+    fn write_frame_pattern(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        byte: u8,
+        count: usize,
+    ) -> Result<(), Self::Error> {
+        self.inner.write_frame_pattern(bus, channel, byte, count)
+    }
+
+    fn trigger_refresh<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.trigger_refresh(bus, delay)
+    }
+
+    fn sleep<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.sleep(bus, delay)
+    }
+}
+
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd168xController
 where
     SPI: SpiDevice,
@@ -157,7 +375,8 @@ where
     ) -> Result<(), Self::Error> {
         bus.hard_reset(delay, 10)?;
         bus.send_command(cmd::SW_RESET)?;
-        bus.wait_busy(true)?;
+        delay.delay_ms(1);
+        bus.wait_busy_with_delay(delay, true)?;
 
         // Driver output control: setting display height
         let h_low = ((self.height - 1) & 0xFF) as u8;
@@ -182,7 +401,8 @@ where
         self.set_window(bus, 0, 0, self.width - 1, self.height - 1)?;
         self.set_cursor(bus, 0, 0)?;
 
-        bus.wait_busy(true)?;
+        delay.delay_ms(1);
+        bus.wait_busy_with_delay(delay, true)?;
         Ok(())
     }
 
@@ -260,7 +480,7 @@ where
     fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         let mode_byte = match self.refresh_mode {
             Ssd168xRefreshMode::Full => 0xF7,
@@ -272,22 +492,26 @@ where
                 // Power on sequence
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xE0])?;
                 bus.send_command(cmd::MASTER_ACTIVATE)?;
-                bus.wait_busy(true)?;
+                delay.delay_ms(1);
+                bus.wait_busy_with_delay(delay, true)?;
 
                 // Display update sequence (Full: OTP LUT, Partial: built-in fast LUT)
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
                 bus.send_command(cmd::MASTER_ACTIVATE)?;
-                bus.wait_busy(true)?;
+                delay.delay_ms(1);
+                bus.wait_busy_with_delay(delay, true)?;
 
                 // Power off sequence
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x83])?;
                 bus.send_command(cmd::MASTER_ACTIVATE)?;
-                bus.wait_busy(true)
+                delay.delay_ms(1);
+                bus.wait_busy_with_delay(delay, true)
             }
             Ssd168xVariant::Ssd1681 => {
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
                 bus.send_command(cmd::MASTER_ACTIVATE)?;
-                bus.wait_busy(true)
+                delay.delay_ms(1);
+                bus.wait_busy_with_delay(delay, true)
             }
         }
     }

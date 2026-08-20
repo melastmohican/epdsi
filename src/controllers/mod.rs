@@ -18,4 +18,3 @@ pub use ssd168x::{
     Ssd168xController, Ssd168xRefreshMode, Ssd168xVariant,
 };
 pub use uc8253::{Uc8253Controller, Uc8253RefreshMode};
-
