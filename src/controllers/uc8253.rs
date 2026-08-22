@@ -89,10 +89,20 @@ impl Uc8253Controller {
         self.refresh_mode
     }
 
-    /// Re-sends the two Panel Setting register writes performed during `init_sequence`, used to
-    /// undo the CCSET/TSSET "TSFIX" temperature override after a fast-update refresh.
+    /// Clears any recorded partial window, returning the controller to full-frame addressing.
+    ///
+    /// Full-frame writes must not be wrapped in a partial-window session, so call this before a
+    /// full-screen write/refresh that follows partial updates.
+    pub fn clear_window(&mut self) {
+        self.window = None;
+    }
+
+    /// Opens the recorded partial window (`PARTIAL_IN` + `PARTIAL_WINDOW`), if one is set.
+    ///
+    /// The UC8253 requires the window to be re-opened around *each* RAM write and again around
+    /// the refresh, so this is emitted per operation rather than once by `set_window`.
     #[allow(clippy::type_complexity)]
-    fn reset_panel_setting<SPI, DC, RST, BUSY>(
+    fn open_window<SPI, DC, RST, BUSY>(
         &self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
     ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
@@ -102,41 +112,9 @@ impl Uc8253Controller {
         RST: OutputPin,
         BUSY: InputPin,
     {
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])
-    }
-}
-
-impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Uc8253Controller
-where
-    SPI: SpiDevice,
-    DC: OutputPin,
-    RST: OutputPin,
-    BUSY: InputPin,
-{
-    type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
-
-    fn init_sequence<DELAY: DelayNs>(
-        &mut self,
-        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        delay: &mut DELAY,
-    ) -> Result<(), Self::Error> {
-        bus.hard_reset(delay, 10)?;
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
-        delay.delay_ms(1);
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])?;
-        Ok(())
-    }
-
-    fn set_window(
-        &mut self,
-        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        x_start: u32,
-        y_start: u32,
-        x_end: u32,
-        y_end: u32,
-    ) -> Result<(), Self::Error> {
-        self.window = Some((x_start, y_start, x_end, y_end));
+        let Some((x_start, y_start, x_end, y_end)) = self.window else {
+            return Ok(());
+        };
 
         let x = (x_start & 0xFFF8) as u8;
         let xe = (x_end | 0x0007) as u8;
@@ -156,6 +134,88 @@ where
                 0x01,
             ],
         )
+    }
+
+    /// Closes the partial window (`PARTIAL_OUT`), if one is set.
+    #[allow(clippy::type_complexity)]
+    fn close_window<SPI, DC, RST, BUSY>(
+        &self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+    ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+    where
+        SPI: SpiDevice,
+        DC: OutputPin,
+        RST: OutputPin,
+        BUSY: InputPin,
+    {
+        if self.window.is_some() {
+            bus.send_command(cmd::PARTIAL_OUT)?;
+        }
+        Ok(())
+    }
+
+    /// Re-sends the two Panel Setting register writes performed during `init_sequence`, used to
+    /// undo the CCSET/TSSET "TSFIX" temperature override after a fast-update refresh.
+    #[allow(clippy::type_complexity)]
+    fn reset_panel_setting<SPI, DC, RST, BUSY, DELAY>(
+        &self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+    where
+        SPI: SpiDevice,
+        DC: OutputPin,
+        RST: OutputPin,
+        BUSY: InputPin,
+        DELAY: DelayNs,
+    {
+        // `0x1E` clears RST_N, which is a soft reset; the controller needs time to settle before
+        // `0x1F` releases it. Without the wait the reset's power-on defaults win and the scan
+        // direction flips, rotating every subsequent frame by 180 degrees.
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
+        delay.delay_ms(1);
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])
+    }
+}
+
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Uc8253Controller
+where
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin,
+{
+    type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
+
+    fn init_sequence<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        bus.hard_reset(delay, 10)?;
+        // `0x1E` clears RST_N (soft reset); the 1 ms wait lets it settle before `0x1F` releases it.
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
+        delay.delay_ms(1);
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])?;
+        Ok(())
+    }
+
+    /// Records the partial window without emitting any commands.
+    ///
+    /// The UC8253 needs `PARTIAL_IN` + `PARTIAL_WINDOW` re-issued around every RAM write and
+    /// again around the refresh, so the commands are emitted by `write_frame`,
+    /// `write_frame_pattern` and `trigger_refresh`. Use [`Uc8253Controller::clear_window`] to
+    /// return to full-frame addressing.
+    fn set_window(
+        &mut self,
+        _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x_start: u32,
+        y_start: u32,
+        x_end: u32,
+        y_end: u32,
+    ) -> Result<(), Self::Error> {
+        self.window = Some((x_start, y_start, x_end, y_end));
+        Ok(())
     }
 
     fn set_cursor(
@@ -181,7 +241,9 @@ where
             | ColorChannel::Yellow
             | ColorChannel::Color7(_) => cmd::WRITE_OLD_DATA,
         };
-        bus.send_command_with_data(cmd, data)
+        self.open_window(bus)?;
+        bus.send_command_with_data(cmd, data)?;
+        self.close_window(bus)
     }
 
     fn write_frame_pattern(
@@ -198,8 +260,10 @@ where
             | ColorChannel::Yellow
             | ColorChannel::Color7(_) => cmd::WRITE_OLD_DATA,
         };
+        self.open_window(bus)?;
         bus.send_command(cmd)?;
-        bus.send_data_repeated(byte, count)
+        bus.send_data_repeated(byte, count)?;
+        self.close_window(bus)
     }
 
     fn trigger_refresh<DELAY: DelayNs>(
@@ -207,9 +271,10 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        if self.window.take().is_some() {
-            bus.send_command(cmd::PARTIAL_OUT)?;
-        }
+        // The refresh gets its own partial-window session, re-opened here and closed after the
+        // update. The window is deliberately kept for subsequent operations; call
+        // `clear_window` to return to full-frame addressing.
+        self.open_window(bus)?;
 
         let is_fast = matches!(
             self.refresh_mode,
@@ -237,10 +302,10 @@ where
         bus.wait_busy_with_delay(delay, false)?;
 
         if is_fast {
-            self.reset_panel_setting(bus)?;
+            self.reset_panel_setting(bus, delay)?;
         }
 
-        Ok(())
+        self.close_window(bus)
     }
 
     fn sleep<DELAY: DelayNs>(

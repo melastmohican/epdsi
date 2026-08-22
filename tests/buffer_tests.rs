@@ -81,3 +81,90 @@ fn y_offset_maps_band_coordinates_with_padded_stride() {
     assert_eq!(data[2 * 16], 0x7F);
     assert_eq!(data[0], 0xFF);
 }
+
+/// Rotate180 on a full-frame buffer must map (0,0) to the very last pixel of the last row.
+#[test]
+fn rotate180_maps_origin_to_final_pixel() {
+    const W: u32 = 240;
+    const H: u32 = 416;
+    const STRIDE: usize = 30;
+    let mut data = [0xFFu8; STRIDE * H as usize];
+    {
+        let mut buffer = PageBuffer::new(&mut data, W, H, 0);
+        buffer.set_rotation(DisplayRotation::Rotate180);
+        buffer.set_pixel(0, 0, true);
+    }
+    let last = STRIDE * H as usize - 1;
+    assert_eq!(data[last], 0xFE, "(0,0) did not land at the last pixel");
+    assert!(
+        data[..last].iter().all(|&b| b == 0xFF),
+        "something else was written"
+    );
+}
+
+/// `Rotate180` must produce byte-identical output to an explicit 180-degree blit of the same
+/// pattern. The transform probe used the explicit blit and rendered correctly on hardware, while
+/// the same content drawn through `set_rotation(Rotate180)` did not.
+#[test]
+fn rotate180_matches_explicit_blit() {
+    use embedded_graphics_core::primitives::Rectangle;
+
+    const W: u32 = 240;
+    const H: u32 = 416;
+    const STRIDE: usize = 30;
+    const N: usize = STRIDE * H as usize;
+
+    fn pattern(buf: &mut PageBuffer) {
+        // Asymmetric in both axes: a block near the origin plus a short run along the top edge.
+        for y in 4..20u32 {
+            for x in 4..20u32 {
+                buf.set_pixel(x, y, true);
+            }
+        }
+        for x in 0..120u32 {
+            buf.set_pixel(x, 0, true);
+        }
+        for y in 0..200u32 {
+            buf.set_pixel(0, y, true);
+        }
+    }
+
+    // A: drawn through PageBuffer's own Rotate180
+    let mut a = [0xFFu8; N];
+    {
+        let mut buf = PageBuffer::new(&mut a, W, H, 0);
+        buf.set_rotation(DisplayRotation::Rotate180);
+        pattern(&mut buf);
+    }
+
+    // B: drawn unrotated, then blitted through explicit 180-degree coordinate math
+    let mut tmp = [0xFFu8; N];
+    {
+        let mut buf = PageBuffer::new(&mut tmp, W, H, 0);
+        pattern(&mut buf);
+    }
+    let mut b = [0xFFu8; N];
+    {
+        let mut buf = PageBuffer::new(&mut b, W, H, 0);
+        for y in 0..H {
+            for x in 0..W {
+                let idx = y as usize * STRIDE + (x / 8) as usize;
+                let bit = 7 - (x % 8);
+                if tmp[idx] & (1 << bit) == 0 {
+                    buf.set_pixel(W - 1 - x, H - 1 - y, true);
+                }
+            }
+        }
+    }
+
+    let _ = Rectangle::new(
+        embedded_graphics_core::geometry::Point::zero(),
+        embedded_graphics_core::geometry::Size::new(W, H),
+    );
+
+    let first_diff = a.iter().zip(b.iter()).position(|(x, y)| x != y);
+    assert_eq!(
+        first_diff, None,
+        "Rotate180 diverges from an explicit blit at byte {first_diff:?}"
+    );
+}

@@ -189,15 +189,37 @@ fn test_uc8253_set_window_byte_alignment() {
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Uc8253Controller::new(GDEY037T03::WIDTH, GDEY037T03::HEIGHT);
 
+    // set_window only records the area; the UC8253 needs the window re-opened around every
+    // operation, so no commands are emitted here.
     // x_start=10 (rounds down to 8 via &0xFFF8), x_end=20 (rounds up to 23 via |0x0007)
     controller.set_window(&mut bus, 10, 5, 20, 15).unwrap();
+    assert!(bus_backend.records.borrow().is_empty());
+
+    // The recorded area is emitted around the next RAM write, and closed again afterwards.
+    controller
+        .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xAA])
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
             SpiRecord::Command(0x91), // PARTIAL_IN
             SpiRecord::Command(0x90), // PARTIAL_WINDOW
             SpiRecord::Data(vec![8, 23, 0x00, 0x05, 0x00, 0x0F, 0x01]),
+            SpiRecord::Command(0x13),
+            SpiRecord::Data(vec![0xAA]),
+            SpiRecord::Command(0x92), // PARTIAL_OUT
         ]
+    );
+
+    // clear_window returns to full-frame addressing: no window commands at all.
+    bus_backend.records.borrow_mut().clear();
+    controller.clear_window();
+    controller
+        .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xBB])
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![SpiRecord::Command(0x13), SpiRecord::Data(vec![0xBB])]
     );
 }
 
@@ -271,7 +293,8 @@ fn test_uc8253_trigger_refresh_all_modes() {
         ]
     );
 
-    // Partial with a window set: PARTIAL_OUT first, CDI=0xD7.
+    // Partial with a window set: the refresh gets its own PARTIAL_IN/PARTIAL_WINDOW session,
+    // closed by PARTIAL_OUT only after DISPLAY_REFRESH completes.
     bus_backend.records.borrow_mut().clear();
     let mut controller = Uc8253Controller::new(GDEY037T03::WIDTH, GDEY037T03::HEIGHT)
         .with_refresh_mode(Uc8253RefreshMode::Partial);
@@ -281,12 +304,15 @@ fn test_uc8253_trigger_refresh_all_modes() {
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
-            SpiRecord::Command(0x92), // PARTIAL_OUT
+            SpiRecord::Command(0x91), // PARTIAL_IN, re-opened for the refresh
+            SpiRecord::Command(0x90),
+            SpiRecord::Data(vec![0, 239, 0x00, 0x00, 0x01, 0x9F, 0x01]),
             SpiRecord::Command(0x50),
             SpiRecord::Data(vec![0xD7]),
             SpiRecord::Command(0x04),
             SpiRecord::Command(0x12),
             SpiRecord::Command(0x02),
+            SpiRecord::Command(0x92), // PARTIAL_OUT, after the refresh
         ]
     );
 
@@ -352,4 +378,43 @@ fn test_uc8253_busy_low_polarity_smoke() {
         .expect("UC8253 clear frame failed");
     driver.refresh(&mut delay).expect("UC8253 refresh failed");
     driver.sleep(&mut delay).expect("UC8253 sleep failed");
+}
+
+/// A fast update must restore the panel setting with a settling gap between the soft reset
+/// (`0x1E`, RST_N low) and its release (`0x1F`). Issuing them back-to-back lets the reset's
+/// power-on defaults win, which flips the scan direction and rotates every later frame.
+#[test]
+fn test_uc8253_fast_update_restores_panel_setting_with_settling_delay() {
+    struct CountingDelay(u32);
+    impl DelayNs for CountingDelay {
+        fn delay_ns(&mut self, _ns: u32) {}
+        fn delay_ms(&mut self, ms: u32) {
+            self.0 += ms;
+        }
+    }
+
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = CountingDelay(0);
+
+    let mut controller = Uc8253Controller::new(GDEY037T03::WIDTH, GDEY037T03::HEIGHT)
+        .with_refresh_mode(Uc8253RefreshMode::FastPartial);
+    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+
+    let records = bus_backend.records.borrow().clone();
+    let tail = &records[records.len() - 4..];
+    assert_eq!(
+        tail,
+        &[
+            SpiRecord::Command(0x00),
+            SpiRecord::Data(vec![0x1E, 0x0D]),
+            SpiRecord::Command(0x00),
+            SpiRecord::Data(vec![0x1F, 0x0D]),
+        ]
+    );
+    assert!(
+        delay.0 >= 1,
+        "no settling delay between the soft reset and its release"
+    );
 }
