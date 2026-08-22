@@ -27,20 +27,31 @@ pub struct PageBuffer<'a> {
     buffer: &'a mut [u8],
     width: u32,
     height: u32,
+    /// Row stride in bytes, rounded up to a whole byte. Panels whose width is not a multiple of
+    /// 8 (such as the 122 px GDEM0213B74 and ZJY122250) address RAM in whole bytes, so a row
+    /// occupies `width.div_ceil(8)` bytes and the trailing bits are off-panel padding.
+    stride: usize,
     y_offset: u32,
     rotation: DisplayRotation,
 }
 
 impl<'a> PageBuffer<'a> {
     /// Creates a new `PageBuffer` wrapping a mutable slice.
+    /// `buffer` must be at least `width.div_ceil(8) * height` bytes long.
     pub fn new(buffer: &'a mut [u8], width: u32, height: u32, y_offset: u32) -> Self {
         Self {
             buffer,
             width,
             height,
+            stride: width.div_ceil(8) as usize,
             y_offset,
             rotation: DisplayRotation::Rotate0,
         }
+    }
+
+    /// Returns the row stride in bytes (`width` rounded up to a whole byte).
+    pub fn stride(&self) -> usize {
+        self.stride
     }
 
     /// Sets the rotation of the display buffer.
@@ -105,7 +116,7 @@ impl<'a> PageBuffer<'a> {
         }
 
         let local_y = mapped_y - self.y_offset;
-        let index = ((local_y * self.width + mapped_x) / 8) as usize;
+        let index = local_y as usize * self.stride + (mapped_x / 8) as usize;
         let bit = 7 - (mapped_x % 8);
 
         if index < self.buffer.len() {

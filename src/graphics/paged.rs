@@ -34,7 +34,7 @@ where
         let y_end = (y_start + page_height).min(height) - 1;
         let current_page_height = y_end - y_start + 1;
 
-        let required_bytes = ((width * current_page_height) / 8) as usize;
+        let required_bytes = width.div_ceil(8) as usize * current_page_height as usize;
 
         // Reset page buffer contents
         page_buffer[..required_bytes].fill(clear_byte);

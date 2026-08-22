@@ -98,7 +98,9 @@ where
         channel: ColorChannel,
         pattern_byte: u8,
     ) -> Result<(), CONTROLLER::Error> {
-        let total_bytes = ((PANEL::WIDTH * PANEL::HEIGHT) / 8) as usize;
+        // Rows are byte-addressed in controller RAM, so a panel whose width is not a multiple
+        // of 8 (such as the 122 px GDEM0213B74) still occupies `width.div_ceil(8)` bytes per row.
+        let total_bytes = PANEL::WIDTH.div_ceil(8) as usize * PANEL::HEIGHT as usize;
         self.controller
             .write_frame_pattern(&mut self.bus, channel, pattern_byte, total_bytes)
     }

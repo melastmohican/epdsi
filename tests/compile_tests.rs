@@ -128,8 +128,9 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
         .clear_frame(ColorChannel::BlackWhite, 0xFF)
         .expect("Clear frame failed");
 
-    // Test paged rendering
-    let mut page_buffer = [0u8; (122 * 20) / 8];
+    // Test paged rendering. 122 px is not a byte multiple, so a row occupies
+    // 122.div_ceil(8) == 16 bytes, not 122 / 8 == 15.
+    let mut page_buffer = [0u8; 16 * 20];
     render_paged(
         &mut driver,
         &mut delay,
