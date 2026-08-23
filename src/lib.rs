@@ -5,6 +5,7 @@
 //! and physical communication hardware (`SpiBusWrapper`).
 
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 

@@ -6,6 +6,7 @@ use embedded_hal::delay::DelayNs;
 
 /// Color operation modes supported by E-Paper displays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ColorMode {
     /// Monochrome (1-bit Black and White)
     BlackWhite,
@@ -20,6 +21,7 @@ pub enum ColorMode {
 /// 7-Color ACeP / Spectra 6 Palette Color definitions for 4-bit per pixel displays (such as ED2208).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SevenColor {
     /// Black color (0x0)
     Black = 0x00,
@@ -48,6 +50,7 @@ impl SevenColor {
 
 /// Identifies the frame buffer/RAM color channel being targeted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ColorChannel {
     /// Primary Black/White image channel
     BlackWhite,

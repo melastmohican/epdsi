@@ -22,6 +22,10 @@ jobs:
         action:
           - command: check
             args: --all-targets
+          - command: check
+            args: --no-default-features
+          - command: check
+            args: --features defmt
           - command: test
             args: --workspace
           - command: clippy
@@ -40,6 +44,26 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run command
         run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
+
+  msrv:
+    name: Minimum Supported Rust Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          # Must match `rust-version` in Cargo.toml.
+          toolchain: "1.75"
+      - name: Enable caching
+        uses: Swatinem/rust-cache@v2
+      - name: Drop lockfile
+        # The committed Cargo.lock is format v4, which Cargo 1.75 cannot parse.
+        # Resolving fresh here also mirrors what a consumer on the MSRV would get.
+        run: rm -f Cargo.lock
+      - name: Check library
+        run: cargo check --all-features
 
   build-targets:
     name: Build for Targets

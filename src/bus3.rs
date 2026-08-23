@@ -36,6 +36,7 @@ pub trait DynamicPin {
 
 /// Error wrapper categorizing errors from the individual GPIO pins driving [`Spi3Bus`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> {
     /// Error toggling the Chip Select pin.
     Cs(CSE),

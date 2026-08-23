@@ -39,6 +39,7 @@ pub mod cmd {
 
 /// Display refresh operating mode for the UC8253 controller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Uc8253RefreshMode {
     /// Full display update using the panel's default waveform speed (CDI `0x97`).
     #[default]

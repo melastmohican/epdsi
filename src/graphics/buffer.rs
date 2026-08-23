@@ -10,6 +10,7 @@ use embedded_graphics_core::{
 
 /// Display rotation options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DisplayRotation {
     /// 0 degrees (default)
     #[default]
@@ -130,6 +131,7 @@ impl<'a> PageBuffer<'a> {
 }
 
 #[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
 impl<'a> Dimensions for PageBuffer<'a> {
     fn bounding_box(&self) -> Rectangle {
         Rectangle::new(
@@ -140,6 +142,7 @@ impl<'a> Dimensions for PageBuffer<'a> {
 }
 
 #[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
 impl<'a> DrawTarget for PageBuffer<'a> {
     type Color = BinaryColor;
     type Error = core::convert::Infallible;

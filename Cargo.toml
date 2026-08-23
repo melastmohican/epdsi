@@ -8,9 +8,17 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/melastmohican/epdsi"
 documentation = "https://docs.rs/epdsi"
 readme = "README.md"
+homepage = "https://github.com/melastmohican/epdsi"
 keywords = ["epd", "e-paper", "embedded-hal", "display", "no-std"]
 categories = ["embedded", "no-std", "hardware-support"]
 rust-version = "1.75"
+exclude = [
+    ".agents/",
+    ".github/",
+    ".idea/",
+    "CLAUDE.md",
+    "**/.DS_Store",
+]
 
 [dependencies]
 embedded-hal = "1.0.0"

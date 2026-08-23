@@ -56,6 +56,7 @@ pub mod cmd {
 
 /// Display refresh operating mode for the SSD1677 controller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Ssd1677RefreshMode {
     /// Full display update using the panel's OTP/full waveform LUT (`UPDATE_DISPLAY_CTRL2 = 0xF7`).
     #[default]
