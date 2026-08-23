@@ -2,9 +2,12 @@
 //!
 //! Register set extends `Ssd1681Controller`'s (`0x01`/`0x11`/`0x3C`/`0x44`/`0x45`/`0x4E`/`0x4F`/`0x22`/`0x20`
 //! window/refresh conventions) with a wider booster soft-start command and an explicit Display Update
-//! Control 1 register. The target panel's gates are physically wired in reverse with no hardware
-//! gate-scan-direction bit, so `set_window`/`set_cursor` flip the Y axis in software (Y-decrement data
-//! entry mode) rather than relying on a register bit like other controllers in this crate.
+//! Control 1 register. It also **widens the RAM X address**: the SSD1677 drives up to 960 source lines,
+//! so `SET_RAMXPOS` takes four bytes (start and end as little-endian 16-bit values) and `SET_RAMXCNT`
+//! two, and both are expressed in *pixels* rather than the byte indices SSD1680/SSD1681 use.
+//! The target panel's gates are physically wired in reverse with no hardware gate-scan-direction bit,
+//! so `set_window`/`set_cursor` flip the Y axis in software (Y-decrement data entry mode) rather than
+//! relying on a register bit like other controllers in this crate.
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -131,10 +134,8 @@ where
         // Border Waveform Control
         bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x01])?;
 
-        // Data Entry Mode: Increment X, Decrement Y (gates are physically reversed on this panel)
-        bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x01])?;
-
-        // Set RAM Area to full display frame
+        // Set RAM Area to full display frame. `set_window` also asserts the Increment-X /
+        // Decrement-Y data entry mode the reversed gates require.
         self.set_window(bus, 0, 0, self.width - 1, self.height - 1)?;
         self.set_cursor(bus, 0, 0)?;
 
@@ -149,8 +150,11 @@ where
         x_end: u32,
         y_end: u32,
     ) -> Result<(), Self::Error> {
-        let x_start_byte = (x_start / 8) as u8;
-        let x_end_byte = (x_end / 8) as u8;
+        // Unlike SSD1680/SSD1681, which address RAM X by *byte index* in a single register byte,
+        // the SSD1677 drives up to 960 source lines and takes a 2-byte, *pixel*-valued X address
+        // for both the start and the end of the window. Round the span out to whole bytes.
+        let xs = x_start & !7;
+        let xe = x_end | 7;
 
         // Y is reversed in RAM: the panel gates are physically wired in reverse, so the visible-space
         // window (y_start..=y_end) maps to a decrementing RAM Y range starting at the "high" end.
@@ -158,7 +162,17 @@ where
         let yy = self.height - y_start - h;
         let yy_end = self.height - y_start - 1;
 
-        bus.send_command_with_data(cmd::SET_RAMXPOS, &[x_start_byte, x_end_byte])?;
+        // Re-assert Y-decrement data entry alongside every window change, matching GxEPD2.
+        bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x01])?;
+        bus.send_command_with_data(
+            cmd::SET_RAMXPOS,
+            &[
+                (xs & 0xFF) as u8,
+                ((xs >> 8) & 0xFF) as u8,
+                (xe & 0xFF) as u8,
+                ((xe >> 8) & 0xFF) as u8,
+            ],
+        )?;
         bus.send_command_with_data(
             cmd::SET_RAMYPOS,
             &[
@@ -176,9 +190,13 @@ where
         x: u32,
         y: u32,
     ) -> Result<(), Self::Error> {
-        let x_byte = (x / 8) as u8;
+        // 2-byte, pixel-valued X counter to match `SET_RAMXPOS`; see `set_window`.
+        let xx = x & !7;
         let yy_cursor = self.height - 1 - y;
-        bus.send_command_with_data(cmd::SET_RAMXCNT, &[x_byte])?;
+        bus.send_command_with_data(
+            cmd::SET_RAMXCNT,
+            &[(xx & 0xFF) as u8, ((xx >> 8) & 0xFF) as u8],
+        )?;
         bus.send_command_with_data(
             cmd::SET_RAMYCNT,
             &[(yy_cursor & 0xFF) as u8, ((yy_cursor >> 8) & 0xFF) as u8],
