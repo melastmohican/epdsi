@@ -1,10 +1,17 @@
 # epdsi: E-Paper Display Serial Interface Framework
 
 [![Crates.io](https://img.shields.io/crates/v/epdsi.svg)](https://crates.io/crates/epdsi)
-[![Documentation](https://docs.rs/epdsi/badge.svg)](https://docs.rs/epdsi)
+[![Documentation](https://img.shields.io/docsrs/epdsi)](https://docs.rs/epdsi)
+[![CI](https://github.com/melastmohican/epdsi/actions/workflows/ci.yml/badge.svg)](https://github.com/melastmohican/epdsi/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 
 A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 compatible Rust driver framework for Electronic Paper Displays (EPD).
+
+![Panels driven by epdsi: GDEQ0426T82, GDEY037T03, ZJY122250, GDEM0213B74, GDEM0154Z90, E2417QS0A3, E2154QS0F1](epdsi.jpg)
+
+*Every panel above driven by `epdsi` on an RP2350 Pico 2 — left to right: `GDEQ0426T82` (SSD1677),
+`GDEY037T03` (UC8253), `ZJY122250` (JD79661), `GDEM0213B74` (SSD1680), `GDEM0154Z90` (SSD1681),
+`E2417QS0A3` and `E2154QS0F1` (Pervasive Spectra-4 BWRY, Drivers A and F).*
 
 ## Features
 
