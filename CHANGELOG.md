@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-23
+
+Documentation correction. No API or behaviour changes.
+
+### Fixed
+
+- `GDEP073E01` was documented throughout as a "7-Color ACeP" panel. It is an **E Ink
+  Spectra 6** panel — vendor part `GDEP073E01(E6)` — rendering six colours: black,
+  white, red, yellow, blue and green. Corrected in the panel and controller docs and
+  in the crate-level and README tables.
+- `SevenColor::Orange` is **not renderable** on Spectra 6 panels, including
+  `GDEP073E01`; it belongs to the older ACeP 7-colour generation and previously
+  produced an undefined colour with nothing documenting why. The variant now carries
+  that warning, and `SevenColor::Clean` is documented as rendering white.
+
+`SevenColor` keeps its name and discriminants — the values are the panels' native
+codes and are correct, and the palette spans both the ACeP 7-colour and Spectra 6
+generations.
+
 ## [0.1.1] - 2026-08-23
 
 Documentation and discoverability. No API or behaviour changes — every panel and
@@ -78,6 +97,7 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/melastmohican/epdsi/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/melastmohican/epdsi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/melastmohican/epdsi/releases/tag/v0.1.0
