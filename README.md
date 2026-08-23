@@ -85,7 +85,7 @@ The snippets below are abridged; for complete flashable programs see [Examples o
 
 ```rust,ignore
 use epdsi::prelude::*;
-use embedded_graphics::{prelude::*, primitives::Rectangle, pixelcolor::BinaryColor, geometry::Point, geometry::Size};
+use embedded_graphics::{prelude::*, primitives::{Rectangle, PrimitiveStyle}, pixelcolor::BinaryColor, geometry::{Point, Size}};
 
 // Initialize SPI bus wrapper and controller
 let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);

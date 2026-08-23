@@ -48,11 +48,18 @@
 //!
 //! # Quick start
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use embedded_hal_mock::eh1::{
+//! #     spi::Mock as SpiMock, digital::Mock as PinMock, delay::NoopDelay,
+//! # };
+//! # let spi_device = SpiMock::<u8>::new(&[]);
+//! # let (dc_pin, rst_pin, busy_pin) =
+//! #     (PinMock::new(&[]), PinMock::new(&[]), PinMock::new(&[]));
+//! # let mut delay = NoopDelay;
 //! use epdsi::prelude::*;
 //! use embedded_graphics::{
-//!     prelude::*, primitives::Rectangle, pixelcolor::BinaryColor,
-//!     geometry::Point, geometry::Size,
+//!     prelude::*, primitives::{Rectangle, PrimitiveStyle},
+//!     pixelcolor::BinaryColor, geometry::{Point, Size},
 //! };
 //!
 //! // Wrap the SPI device and its control pins.

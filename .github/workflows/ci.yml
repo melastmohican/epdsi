@@ -32,6 +32,9 @@ jobs:
             args: --all-features --workspace -- -D warnings
           - command: doc
             args: --no-deps --all-features
+            # Broken intra-doc links are warnings by default, so the doc job
+            # would pass while shipping dead links to docs.rs.
+            rustdocflags: "-D warnings"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,6 +47,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run command
         run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
+        env:
+          RUSTDOCFLAGS: ${{ matrix.action.rustdocflags }}
 
   msrv:
     name: Minimum Supported Rust Version
