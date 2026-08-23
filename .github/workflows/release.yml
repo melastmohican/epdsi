@@ -58,11 +58,50 @@ jobs:
       - name: Package dry run
         run: cargo publish --dry-run
 
+      - name: Check whether this version is already on crates.io
+        id: published
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name=epdsi
+          # Sparse-index layout: 1-char -> 1/<name>, 2 -> 2/<name>,
+          # 3 -> 3/<first>/<name>, 4+ -> <first two>/<next two>/<name>.
+          # Queried directly because `cargo info` resolves the *local*
+          # package when run inside the crate, which would always report
+          # "already published" and silently disable publishing.
+          case ${#name} in
+            1) path="1/$name" ;;
+            2) path="2/$name" ;;
+            3) path="3/${name:0:1}/$name" ;;
+            *) path="${name:0:2}/${name:2:2}/$name" ;;
+          esac
+          code="$(curl -sS -o index.json -w '%{http_code}' "https://index.crates.io/$path")"
+          case "$code" in
+            404)
+              echo "Crate is not in the index yet; publishing."
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              if jq -e --arg v "$version" 'select(.vers == $v)' index.json > /dev/null; then
+                echo "::notice::$name $version is already on crates.io; skipping publish."
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "$name $version is not on crates.io; publishing."
+                echo "skip=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo "::error::Unexpected HTTP $code from the crates.io index"
+              exit 1
+              ;;
+          esac
+          rm -f index.json
+
       - name: Authenticate to crates.io
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
       - name: Publish to crates.io
+        if: steps.published.outputs.skip == 'false'
         run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
