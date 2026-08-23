@@ -63,6 +63,15 @@ epdsi = "0.1.0"
 embedded-graphics = "0.8"
 ```
 
+### Cargo features
+
+| Feature | Default | Description |
+| :--- | :---: | :--- |
+| `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer` and `render_paged` still work, you just draw into the buffer yourself. |
+| `defmt` | no | Derives `defmt::Format` on the public error and mode enums (`EpdBusError`, `Spi3BusError`, `PervasiveBwryOtpError`, `ColorMode`, `ColorChannel`, `SevenColor`, and the per-controller refresh/variant enums) for logging on embedded targets. |
+
+The minimum supported Rust version is **1.75**.
+
 ### 1. Usage Example (SSD1681 Controller + GDEM0154Z90 Panel)
 
 ```rust,ignore

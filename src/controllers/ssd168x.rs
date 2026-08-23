@@ -45,6 +45,7 @@ pub mod cmd {
 
 /// SSD168x IC variant family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Ssd168xVariant {
     /// SSD1680 IC variant (supports 176×296 RAM space, uses explicit power-stage commands 0xE0/0x83).
     #[default]
@@ -55,6 +56,7 @@ pub enum Ssd168xVariant {
 
 /// Display refresh operating mode for SSD168x controllers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Ssd168xRefreshMode {
     /// Full display update using the panel's OTP/full waveform LUT (`UPDATE_DISPLAY_CTRL2 = 0xF7`).
     ///

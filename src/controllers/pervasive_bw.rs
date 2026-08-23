@@ -37,6 +37,7 @@ const REG_DATA_ACTIVE_TEMP: &[u8] = &[0x02];
 
 /// Display refresh operating mode for Pervasive Displays controller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PervasiveRefreshMode {
     /// Standard full screen update mode.
     #[default]
@@ -47,6 +48,7 @@ pub enum PervasiveRefreshMode {
 
 /// Pervasive COG driver IC variant family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PervasiveDriverVariant {
     /// COG Driver C / E / D / 9 (e.g. E2266KS0C1 / EPD_266_KS_0C). Uses Panel Setting Register (PSR 0x00).
     #[default]

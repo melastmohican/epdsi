@@ -39,6 +39,7 @@ pub mod cmd {
 
 /// Pervasive BWRY COG driver IC variant family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PervasiveBwryVariant {
     /// Driver F (e.g. `E2154QS0F1` / `EPD_154_QS_0F`, shared with `213_QS_0F`/`266_QS_0F`).
     /// 48-byte OTP read, chip ID `0x0302` (raw `0x8302` is normalized to `0x0302`).
@@ -69,6 +70,7 @@ impl PervasiveBwryVariant {
 /// Error type for [`PervasiveBwryController::read_otp`], extending bit-banged bus errors with OTP
 /// handshake failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PervasiveBwryOtpError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> {
     /// Underlying bit-banged bus/GPIO error.
     Bus(Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>),

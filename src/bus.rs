@@ -7,6 +7,7 @@ use embedded_hal::spi::SpiDevice;
 
 /// Bus error wrapper categorizing errors from SPI transfers or GPIO toggling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
     /// Error originating from SPI transfer.
     Spi(SPIE),
