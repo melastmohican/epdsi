@@ -2,6 +2,23 @@
 //!
 //! Driver IC for 4 bpp palette e-paper panels — ACeP 7-colour and E Ink Spectra 6
 //! (such as Good Display GDEP073E01, which is a Spectra 6 / E6 panel).
+//!
+//! # Where the "ED2208" designation comes from
+//!
+//! GxEPD2, the reference this implementation is audited against, names its classes
+//! after panels (`GxEPD2_730c_GDEP073E01`) and never names the controller — so the
+//! part number is not recoverable from it.
+//!
+//! The name comes from the hardware. Zephyr's mainline board port for the Seeed
+//! reTerminal E1002, which carries a GDEP073E01, declares the display controller as
+//! **ED2208-GCA** ("E-Ink ED2208-GCA Display Controller") behind the devicetree
+//! compatible string `eink,ed2208-gca`.
+//!
+//! `ED2208` is an E Ink part family with suffixed variants: `-GCA` drives the 7.3"
+//! 800x480 panel targeted here, while `-NCA` is the 13.3" 1600x1200 part. This
+//! controller implements the `-GCA` command set.
+//!
+//! See <https://docs.zephyrproject.org/latest/boards/seeed/reterminal_e1002/doc/index.html>.
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
