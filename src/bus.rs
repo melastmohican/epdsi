@@ -43,6 +43,18 @@ where
         Self { spi, dc, rst, busy }
     }
 
+    /// Reads the current level of the BUSY pin.
+    ///
+    /// Panels signal "still working" on this line, with the active level differing per
+    /// panel — see the `busy_active_high` argument on [`Self::wait_busy`]. Exposed so
+    /// callers can observe or time a refresh instead of only blocking on it, which is
+    /// often the only way to tell a slow panel from a stalled one.
+    pub fn busy_is_high(
+        &mut self,
+    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error, bool> {
+        self.busy.is_high().map_err(EpdBusError::Busy)
+    }
+
     /// Access inner SPI device reference.
     pub fn spi_mut(&mut self) -> &mut SPI {
         &mut self.spi
