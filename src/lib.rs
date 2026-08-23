@@ -56,6 +56,7 @@
 //! # let (dc_pin, rst_pin, busy_pin) =
 //! #     (PinMock::new(&[]), PinMock::new(&[]), PinMock::new(&[]));
 //! # let mut delay = NoopDelay;
+//! # #[cfg(feature = "graphics")] {
 //! use epdsi::prelude::*;
 //! use embedded_graphics::{
 //!     prelude::*, primitives::{Rectangle, PrimitiveStyle},
@@ -84,6 +85,7 @@
 //!
 //! epd.write_frame(ColorChannel::BlackWhite, display.as_slice()).unwrap();
 //! epd.refresh(&mut delay).unwrap();
+//! # }
 //! ```
 //!
 //! [`prelude`] re-exports everything above and is the intended single import.
