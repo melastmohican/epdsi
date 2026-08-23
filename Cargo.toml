@@ -1,15 +1,15 @@
 [package]
 name = "epdsi"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Mariusz Jurgielewicz <mordor@mail.com>"]
-description = "no_std embedded-hal 1.0 compatible Rust driver framework for Electronic Paper Displays (EPD)"
+description = "no_std embedded-hal 1.0 compatible Rust driver framework for Electronic Paper Displays (EPD): SSD1680, SSD1681, SSD1677, UC8253, JD79661, ED2208, Pervasive Displays COG"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/melastmohican/epdsi"
 documentation = "https://docs.rs/epdsi"
 readme = "README.md"
 homepage = "https://github.com/melastmohican/epdsi"
-keywords = ["epd", "e-paper", "embedded-hal", "display", "no-std"]
+keywords = ["epd", "e-paper", "e-ink", "embedded-hal", "embedded-graphics"]
 categories = ["embedded", "no-std", "hardware-support"]
 rust-version = "1.75"
 exclude = [
