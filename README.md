@@ -264,22 +264,27 @@ epd.sleep(&mut delay).unwrap();
 ## Examples on real hardware
 
 The snippets above are `rust,ignore` because they need real SPI and GPIO. For complete,
-flashable programs, see [`melastmohican/rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery)
-— the RP2350 Pico 2 projects used to bring up and verify every panel in the banner above.
+flashable programs covering every supported controller, see:
 
-| Example | Controller | Panel |
-| :--- | :--- | :--- |
-| [`ssd1681_gdem0154z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `Ssd1681Controller` | `GDEM0154Z90` — 1.54" Tri-Color |
-| [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono |
-| [`jd79661_zjy122250_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `Jd79661Controller` | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color |
-| [`uc8253_gdey037t03_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `Uc8253Controller` | `GDEY037T03` — 3.7" Mono |
-| [`ssd1677_gdeq0426t82_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `Ssd1677Controller` | `GDEQ0426T82` — 4.26" Mono |
-| [`pdi_e2266ks0c1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) | `PervasiveBwController` (Driver C) | `E2266KS0C1` — 2.66" Mono |
-| [`pdi_e2290ks0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) | `PervasiveBwController` (Driver F) | `E2290KS0F1` — 2.90" Mono |
-| [`pdi_e2154qs0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) | `PervasiveBwryController` (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 |
-| [`pdi_e2417qs0a3.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2417qs0a3.rs) | `PervasiveBwryController` (Driver A) | `E2417QS0A3` — 4.2" Spectra-4 |
+- [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal`
+- [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal`
 
-`Ed2208Controller` / `GDEP073E01` is the one supported combination without an example there yet.
+| Example | Controller | Panel | Board |
+| :--- | :--- | :--- | :--- |
+| [`ssd1681_gdem0154z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `Ssd1681Controller` | `GDEM0154Z90` — 1.54" Tri-Color | RP2350 |
+| [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2350 |
+| [`jd79661_zjy122250_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `Jd79661Controller` | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350 |
+| [`uc8253_gdey037t03_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `Uc8253Controller` | `GDEY037T03` — 3.7" Mono | RP2350 |
+| [`ssd1677_gdeq0426t82_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `Ssd1677Controller` | `GDEQ0426T82` — 4.26" Mono | RP2350 |
+| [`pdi_e2266ks0c1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) | `PervasiveBwController` (Driver C) | `E2266KS0C1` — 2.66" Mono | RP2350 |
+| [`pdi_e2290ks0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) | `PervasiveBwController` (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 |
+| [`pdi_e2154qs0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) | `PervasiveBwryController` (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 | RP2350 |
+| [`pdi_e2417qs0a3.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2417qs0a3.rs) | `PervasiveBwryController` (Driver A) | `E2417QS0A3` — 4.2" Spectra-4 | RP2350 |
+| [`epd_ed2208_demo.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_demo.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" ACeP | ESP32-S3 |
+| [`epd_ed2208_bmp.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_bmp.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" ACeP, BMP rendering | ESP32-S3 |
+
+Between the two repos every supported controller has a working example, across both
+Cortex-M (RP2350) and Xtensa (ESP32-S3) hosts.
 
 ## License
 
