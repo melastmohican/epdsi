@@ -26,8 +26,8 @@
 //!
 //! Colour is unified across all panels by [`ColorMode`] and [`ColorChannel`], so
 //! multi-buffer COGs (Pervasive's separate black/white and red RAM, for instance) are
-//! always addressed explicitly rather than implicitly. 7-colour ACeP panels pack two
-//! pixels per byte through [`SevenColor::pack`].
+//! always addressed explicitly rather than implicitly. Panels using the 4 bpp ACeP /
+//! Spectra palette pack two pixels per byte through [`SevenColor::pack`].
 //!
 //! # Supported controllers and panels
 //!
@@ -38,7 +38,7 @@
 //! | [`Jd79661Controller`] | [`ZJY122250_0213AJH_E5`] / [`GDEY0213F51`] | 122 × 250 | Quad-Color |
 //! | [`Uc8253Controller`] | [`GDEY037T03`] | 240 × 416 | Monochrome |
 //! | [`Ssd1677Controller`] | [`GDEQ0426T82`] | 800 × 480 | Monochrome |
-//! | [`Ed2208Controller`] | [`GDEP073E01`] | 800 × 480 | 7-Color ACeP |
+//! | [`Ed2208Controller`] | [`GDEP073E01`] | 800 × 480 | Spectra 6 (4 bpp) |
 //! | [`PervasiveBwController`] | [`E2266KS0C1`], [`E2290KS0F1`] | 152 × 296, 168 × 384 | Monochrome |
 //! | [`PervasiveBwryController`] | [`E2154QS0F1`], [`E2417QS0A3`] | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) |
 //!

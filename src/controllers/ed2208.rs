@@ -1,6 +1,7 @@
 //! ED2208 E-Paper Display Controller implementation.
 //!
-//! Driver IC for 7-Color ACeP / Spectra 6 e-paper display panels (such as Good Display GDEP073E01).
+//! Driver IC for 4 bpp palette e-paper panels — ACeP 7-colour and E Ink Spectra 6
+//! (such as Good Display GDEP073E01, which is a Spectra 6 / E6 panel).
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};

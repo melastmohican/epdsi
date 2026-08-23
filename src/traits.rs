@@ -14,11 +14,34 @@ pub enum ColorMode {
     TriColor,
     /// Quad-Color (Black, White, Red, and Yellow)
     QuadColor,
-    /// 7-Color Advanced Color ePaper (ACeP)
+    /// 4 bits-per-pixel palette used by ACeP and E Ink Spectra panels.
+    ///
+    /// Named for the seven-colour ACeP generation; Spectra 6 panels share the same
+    /// encoding but render six colours. See [`SevenColor`].
     SevenColor,
 }
 
-/// 7-Color ACeP / Spectra 6 Palette Color definitions for 4-bit per pixel displays (such as ED2208).
+/// The 4 bits-per-pixel colour palette shared by ACeP and E Ink Spectra panels
+/// (driven here by [`Ed2208Controller`](crate::controllers::Ed2208Controller)).
+///
+/// The discriminants are the panel's *native* codes, so they can be written to
+/// display RAM directly — no translation layer, unlike GxEPD2, which maps ACeP
+/// indices onto native codes at transfer time.
+///
+/// # Not every variant works on every panel
+///
+/// This palette spans two panel generations:
+///
+/// - **ACeP 7-colour** panels render all seven colours, [`Orange`](Self::Orange) included.
+/// - **Spectra 6 (E6)** panels render six: black, white, red, yellow, blue, green.
+///   [`Orange`](Self::Orange) is **not** in their palette and produces an undefined
+///   colour rather than orange.
+///
+/// The only panel using this palette that `epdsi` currently supports,
+/// [`GDEP073E01`](crate::panels::GDEP073E01), is **Spectra 6** — so avoid
+/// [`Orange`](Self::Orange) with it.
+///
+/// [`Clean`](Self::Clean) is the clear/blank code and renders as white.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -31,13 +54,17 @@ pub enum SevenColor {
     Yellow = 0x02,
     /// Red color (0x3)
     Red = 0x03,
-    /// Orange color (0x4)
+    /// Orange color (0x4).
+    ///
+    /// **ACeP 7-colour panels only.** Not in the Spectra 6 palette — including
+    /// [`GDEP073E01`](crate::panels::GDEP073E01), the only panel using this palette
+    /// that `epdsi` currently supports — where it yields an undefined colour.
     Orange = 0x04,
     /// Blue color (0x5)
     Blue = 0x05,
     /// Green color (0x6)
     Green = 0x06,
-    /// Clean / Clear color (0x7)
+    /// Clean / clear code (0x7). Renders as white.
     Clean = 0x07,
 }
 
