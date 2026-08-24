@@ -266,8 +266,9 @@ epd.sleep(&mut delay).unwrap();
 The snippets above are `rust,ignore` because they need real SPI and GPIO. For complete,
 flashable programs covering every supported controller, see:
 
-- [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal`
-- [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal`
+- [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal`, blocking (Cortex-M33)
+- [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal`, async (Xtensa)
+- [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky) — Seeed XIAO ESP32-C3 on the ePaper Driver Board for XIAO, `esp-hal`, blocking (RISC-V)
 
 | Example | Controller | Panel | Board |
 | :--- | :--- | :--- | :--- |
@@ -280,11 +281,17 @@ flashable programs covering every supported controller, see:
 | [`pdi_e2290ks0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) | `PervasiveBwController` (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 |
 | [`pdi_e2154qs0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) | `PervasiveBwryController` (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 | RP2350 |
 | [`pdi_e2417qs0a3.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2417qs0a3.rs) | `PervasiveBwryController` (Driver A) | `E2417QS0A3` — 4.2" Spectra-4 | RP2350 |
-| [`epd_ed2208_demo.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_demo.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" ACeP | ESP32-S3 |
-| [`epd_ed2208_bmp.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_bmp.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" ACeP, BMP rendering | ESP32-S3 |
+| [`epd_ed2208_demo.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_demo.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" Spectra 6 | ESP32-S3 |
+| [`epd_ed2208_bmp.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_bmp.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" Spectra 6, BMP rendering | ESP32-S3 |
 
-Between the two repos every supported controller has a working example, across both
-Cortex-M (RP2350) and Xtensa (ESP32-S3) hosts.
+Every supported controller has a working example, verified on hardware.
+
+The table lists one example per controller. `xiao-esp32c3-blinky` additionally ports the
+`Ssd1677`, `Ssd1680`, `Ssd1681` and `Jd79661` examples to RISC-V, keeping everything above
+`main()` byte-identical to the RP2350 originals — only board bring-up differs. That is the
+point of the `EpdPanel` / `EpdController` / `SpiBusWrapper` split: the same driver code
+runs unchanged across **Cortex-M33, RISC-V and Xtensa**, under two HAL families and both
+blocking and async executors.
 
 ## License
 
