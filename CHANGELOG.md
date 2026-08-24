@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-23
+
+### Added
+
+- `SpiBusWrapper::busy_is_high`, exposing the current level of the BUSY pin. Panels could
+  previously only be *waited on*, never observed, so there was no way to tell a slow
+  refresh from a stalled one, or to time a refresh at all. That gap turned a hardware
+  fault into a long hunt during bring-up on a XIAO ESP32-C6, where corrupted SPI meant the
+  panel never acted on commands and `refresh` returned instantly — indistinguishable from
+  a driver bug without a way to sample BUSY.
+
+### Fixed
+
+- Two rows of the hardware-examples table still described `GDEP073E01` as a 7.3" ACeP
+  panel. It is E Ink Spectra 6; 0.1.2 corrected this elsewhere but missed these.
+
+### Changed
+
+- README lists [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky)
+  among the hardware examples — four panels on a XIAO ESP32-C3, and the first RISC-V host
+  with verified hardware. With the existing RP2350 (Cortex-M33) and reTerminal E1002
+  (Xtensa) repositories, the same driver code is now exercised unchanged across three
+  architectures, two HAL families, and both blocking and async executors.
+- `ZJY122250_0213AJH_E5` documents the `FPC-J002` flex ribbon stamp as an identification
+  aid. The same panel ships under Good Display, Seeed and Adafruit part numbers with
+  different stickers; units from different vendors are physically identical and carry the
+  same ribbon, so the stamp identifies the panel where the retail labelling does not.
+
 ## [0.1.2] - 2026-08-23
 
 Documentation correction. No API or behaviour changes.
@@ -97,7 +125,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/melastmohican/epdsi/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/melastmohican/epdsi/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/melastmohican/epdsi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/melastmohican/epdsi/releases/tag/v0.1.0
