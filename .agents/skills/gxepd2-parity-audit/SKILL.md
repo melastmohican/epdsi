@@ -1,6 +1,6 @@
 ---
 name: gxepd2-parity-audit
-description: Verifies panel identity against Good Display / Waveshare product pages and datasheets, then audits feature, register, lookup table (LUT), and command-sequence parity between the GxEPD2 C++ reference driver library (ZinggJM/GxEPD2) and the Rust epdsi library implementations (covering SSD1680, SSD1681, SSD1677, UC8253, ED2208, and JD79661 controllers).
+description: Verifies panel identity against Good Display / Waveshare product pages and datasheets, then audits feature, register, lookup table (LUT), and command-sequence parity between the GxEPD2 C++ reference driver library (ZinggJM/GxEPD2) and the Rust epdsi library implementations (covering SSD1680, SSD1681, SSD1677, UC8253, ED2208, JD79660, and JD79661 controllers).
 ---
 
 # GxEPD2 C++ / Rust Parity Audit
@@ -15,6 +15,7 @@ This skill provides step-by-step instructions for auditing, validating, and main
 | `Uc8253Controller` | `src/controllers/uc8253.rs` | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | `src/epd/GxEPD2_370_GDEY037T03.h` & `.cpp` |
 | `Ed2208Controller` | `src/controllers/ed2208.rs` | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | `src/epd7c/GxEPD2_730c_GDEP073E01.h` & `.cpp` |
 | `Jd79661Controller` | `src/controllers/jd79661.rs` | `ZJY122250` / `GDEY0213F51` (`GxEPD2_213c_GDEY0213F51`) | `src/epd4c/GxEPD2_213c_GDEY0213F51.h` & `.cpp` |
+| `Jd79660Controller` | `src/controllers/jd79660.rs` | `GDEM0154F51H` (`GxEPD2_154c_GDEM0154F51H`) | `src/epd4c/GxEPD2_154c_GDEM0154F51H.h` & `.cpp` |
 
 ---
 
@@ -97,6 +98,22 @@ Before auditing or writing code for a Good Display / Waveshare panel, verify pan
   - `PSR` (`0x00`), `PWR` (`0x01`), `POF` (`0x02`), `PON` (`0x04`), `SRES` (`0x61`), `CDI` (`0x50`).
 - **Pixel Streaming**: 2 bits-per-pixel packed 4-color format streamed via command `0x10`.
 
+### 5b. JD79660 Controller (`src/controllers/jd79660.rs`)
+- **Reference**: `src/epd4c/GxEPD2_154c_GDEM0154F51H.h` & `.cpp` (`GxEPD2_154c_GDEM0154F51H`)
+- **Panel / Tech**: 4-Color (Black, White, Yellow, Red) 1.54" 200×200 (`GDEM0154F51H`). Busy active-low.
+- **Command Sequence** (do **not** reuse JD79661 OTP bytes):
+  - Unlock `0x4D` `0x78`; PSR `0x00` = `0x0F, 0x29`; booster `0x06` = `0x0D, 0x12, 0x30, 0x20, 0x19, 0x2A, 0x22`.
+  - CDI `0x50` `0x37`; TRES `0x61` native 200×200 (no 8-pixel pad); `0xE9` `0x01`; PLL `0x30` `0x08`.
+  - Fast full-update (GxEPD2 default): `0xE0` `0x02`, `0xE6` `0x5D`, `0xA5` `0x00`, then busy.
+  - Power on `0x04` only if not already on (`_PowerOn`).
+  - `refresh(bool)` always sends `0x83` for the full panel (`partial_mode` default `true`) then `0x50` + CDI `0x37`/`0x97` and `0x12` `0x00`.
+  - After refresh GxEPD2 sets `_init_display_done = false`; the next RAM write re-runs `_InitDisplay` **without** HW reset and skips `0x04` if power is still on.
+  - After `hibernate` GxEPD2 sets `_hibernating` and the next `_InitDisplay` **does** HW reset. `write_frame` has no `DelayNs`, so call `init_sequence` after `sleep` (do not rely on the lazy reinit).
+  - Sleep: `_PowerOff` (`0x02 0x00` if powered) then `0x07 0xA5`.
+  - Long BUSY waits use `wait_busy_with_delay` (full waveform ~20–25 s).
+  - Partial window `0x83` (start/end inclusive, flag `0x01` / full `0x00`).
+- **Pixel Streaming**: 2 bpp via `0x10` (`00` Black, `01` White, `10` Yellow, `11` Red).
+
 ### 6. SSD1681 Variant (`src/controllers/ssd168x.rs`)
 - **Reference**: `src/epd3c/GxEPD2_154_D67.h` & `.cpp` (`GxEPD2_154_D67`)
 - **Panel / Tech**: 3-Color BWR 1.54" e-Paper (`GDEM0154Z90`).
@@ -133,6 +150,7 @@ Before auditing or writing code for a Good Display / Waveshare panel, verify pan
    cargo test --test uc8253_tests
    cargo test --test ed2208_tests
    cargo test --test compile_tests
+   cargo test --test jd79660_tests
    ```
 
 6. **Verify GxEPD2 Type Aliases**: Ensure tests verify that exported GxEPD2 type aliases resolve to the expected panel struct and match `WIDTH`/`HEIGHT` constants.

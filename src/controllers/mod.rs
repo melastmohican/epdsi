@@ -1,6 +1,7 @@
 //! Controller IC module for various EPD display drivers.
 
 pub mod ed2208;
+pub mod jd79660;
 pub mod jd79661;
 pub mod pervasive_bw;
 pub mod pervasive_bwry;
@@ -9,6 +10,7 @@ pub mod ssd168x;
 pub mod uc8253;
 
 pub use ed2208::Ed2208Controller;
+pub use jd79660::Jd79660Controller;
 pub use jd79661::Jd79661Controller;
 pub use pervasive_bw::{PervasiveBwController, PervasiveDriverVariant, PervasiveRefreshMode};
 pub use pervasive_bwry::{PervasiveBwryController, PervasiveBwryOtpError, PervasiveBwryVariant};

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Jd79660Controller` and `GDEM0154F51H` (`GxEPD2_154c_GDEM0154F51H`) for the
+  Good Display 1.54" 200×200 Quad-Color panel (JD79660). Init, refresh, sleep and
+  the `0x83` partial window match GxEPD2 `GxEPD2_154c_GDEM0154F51H`. After a
+  refresh the next RAM write re-sends `_InitDisplay` without HW reset; after
+  `sleep` call `init_sequence` again (GxEPD2 resets because `_hibernating`).
+  Same panel is in use on the Waveshare ESP32-S3-ePaper-1.54G (SKU 34586) via a
+  handwritten driver; this crate has not been wired to that firmware yet. Panel
+  power enable (GPIO6, active-low) stays board bring-up, not in this crate.
+  Fast full-update LUT load is on by default (`with_fast_full_update(false)`
+  for the low-temperature path).
+
 ## [0.1.3] - 2026-08-23
 
 ### Added

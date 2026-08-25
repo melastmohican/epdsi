@@ -29,6 +29,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
 | **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74` | 122 × 250 | Monochrome | 2.13" Monochrome (Adafruit 6383), Full/Partial refresh |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
+| **JD79660** (`Jd79660Controller`) | `GDEM0154F51H` (`GxEPD2_154c_GDEM0154F51H`) | 200 × 200 | Quad-Color | 1.54" Quad-Color ([Good Display GDEM0154F51H](https://www.good-display.com/product/555.html), [Waveshare ESP32-S3-ePaper-1.54G](https://www.waveshare.com/esp32-s3-epaper-1.54g.htm) SKU 34586), Active-Low BUSY. Drive board `EPD3V3_EN` (GPIO6, active-low) before `init`. Use `write_frame` with a 10 000-byte 2 bpp buffer — `clear_frame` is 1 bpp. |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | 240 × 416 | Monochrome | 3.7" Monochrome (Adafruit 6395), Active-Low BUSY, Full/FastFull/Partial/FastPartial refresh |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
 | **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | Spectra 6 (4bpp) | 7.3" six-colour E Ink Spectra 6 / `GDEP073E01(E6)` — black, white, red, yellow, blue, green. `SevenColor::Orange` is ACeP-7 only and **not** renderable here (Seeed reTerminal E1002) |
@@ -132,6 +133,27 @@ epd.init(&mut delay).unwrap();
 // Send 2bpp packed QuadColor frame buffer (8,000 bytes for 128x250 hardware RAM)
 epd.write_frame(ColorChannel::BlackWhite, &quad_color_frame_buf).unwrap();
 epd.refresh(&mut delay).unwrap();
+```
+
+### 2b. Usage Example (JD79660 Controller + 1.54" Quad-Color Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Board bring-up (Waveshare ESP32-S3-ePaper-1.54G): drive EPD3V3_EN / GPIO6 LOW first.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Jd79660Controller::new(GDEM0154F51H::WIDTH, GDEM0154F51H::HEIGHT);
+let mut epd = EpdBuilder::<_, GDEM0154F51H>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// 10,000-byte 2bpp frame (0x55 = white). Do not use clear_frame (1 bpp stride).
+epd.write_frame(ColorChannel::BlackWhite, &quad_color_frame_buf).unwrap();
+epd.refresh(&mut delay).unwrap();
+// After sleep the chip needs a HW reset — call init() again, as GxEPD2 does
+// when `_hibernating` (write_frame cannot reset: no DelayNs).
+epd.sleep(&mut delay).unwrap();
+epd.init(&mut delay).unwrap();
 ```
 
 ### 3. Usage Example (PervasiveBwController + E2266KS0C1 Panel)

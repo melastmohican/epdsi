@@ -1,7 +1,7 @@
 //! # `epdsi` — E-Paper Display Serial Interface Framework
 //!
 //! A `no_std`, [`embedded-hal`] 1.0 compatible driver framework for Electronic Paper
-//! Displays (EPDs), covering seven driver ICs and ten panels behind one API.
+//! Displays (EPDs), covering eight driver ICs and eleven panels behind one API.
 //!
 //! Most EPD crates bind one driver IC to one panel. `epdsi` separates the two, so adding
 //! a panel to an existing controller is a single new file, and adding a controller does
@@ -36,6 +36,7 @@
 //! | [`Ssd1681Controller`] | [`GDEM0154Z90`] | 200 × 200 | Tri-Color |
 //! | [`Ssd1680Controller`] | [`GDEM0213B74`] | 122 × 250 | Monochrome |
 //! | [`Jd79661Controller`] | [`ZJY122250_0213AJH_E5`] / [`GDEY0213F51`] | 122 × 250 | Quad-Color |
+//! | [`Jd79660Controller`] | [`GDEM0154F51H`] / [`GxEPD2_154c_GDEM0154F51H`] | 200 × 200 | Quad-Color |
 //! | [`Uc8253Controller`] | [`GDEY037T03`] | 240 × 416 | Monochrome |
 //! | [`Ssd1677Controller`] | [`GDEQ0426T82`] | 800 × 480 | Monochrome |
 //! | [`Ed2208Controller`] | [`GDEP073E01`] | 800 × 480 | Spectra 6 (4 bpp) |
@@ -134,10 +135,13 @@
 //! [`Ssd1681Controller`]: controllers::Ssd1681Controller
 //! [`Ssd1677Controller`]: controllers::Ssd1677Controller
 //! [`Uc8253Controller`]: controllers::Uc8253Controller
+//! [`Jd79660Controller`]: controllers::Jd79660Controller
 //! [`Jd79661Controller`]: controllers::Jd79661Controller
 //! [`Ed2208Controller`]: controllers::Ed2208Controller
 //! [`PervasiveBwController`]: controllers::PervasiveBwController
 //! [`PervasiveBwryController`]: controllers::PervasiveBwryController
+//! [`GDEM0154F51H`]: panels::GDEM0154F51H
+//! [`GxEPD2_154c_GDEM0154F51H`]: panels::GxEPD2_154c_GDEM0154F51H
 //! [`GDEM0154Z90`]: panels::GDEM0154Z90
 //! [`GDEM0213B74`]: panels::GDEM0213B74
 //! [`ZJY122250_0213AJH_E5`]: panels::ZJY122250_0213AJH_E5

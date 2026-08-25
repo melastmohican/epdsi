@@ -146,6 +146,48 @@ fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
 }
 
 #[test]
+fn test_jd79660_epd_driver_instantiation_and_paged_rendering() {
+    let spi = MockSpi;
+    let dc = MockOutputPin;
+    let rst = MockOutputPin;
+    let busy = MockInputPin { is_high: true };
+    let mut delay = MockDelay;
+
+    let bus = SpiBusWrapper::new(spi, dc, rst, busy);
+    let controller = Jd79660Controller::new(GDEM0154F51H::WIDTH, GDEM0154F51H::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEM0154F51H>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 200);
+    assert_eq!(driver.height(), 200);
+    assert_eq!(GxEPD2_154c_GDEM0154F51H::WIDTH, 200);
+
+    driver.init(&mut delay).expect("Initialization failed");
+
+    // 2 bpp packed white (0x55). clear_frame is 1 bpp and is the wrong size for this panel.
+    let white_2bpp = [0x55u8; GDEM0154F51H::FRAME_BYTES];
+    driver
+        .write_frame(ColorChannel::BlackWhite, &white_2bpp)
+        .expect("Write frame failed");
+
+    let mut page_buffer = [0u8; 25 * 20];
+    render_paged(
+        &mut driver,
+        &mut delay,
+        ColorChannel::BlackWhite,
+        &mut page_buffer,
+        20,
+        0xFF,
+        |page_buf| {
+            page_buf.set_pixel(10, page_buf.y_offset() + 5, true);
+        },
+    )
+    .expect("Paged rendering failed");
+
+    driver.refresh(&mut delay).expect("Refresh failed");
+    driver.sleep(&mut delay).expect("Sleep failed");
+}
+
+#[test]
 fn test_pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;
