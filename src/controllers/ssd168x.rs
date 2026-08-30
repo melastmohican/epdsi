@@ -21,6 +21,8 @@ pub mod cmd {
     pub const SW_RESET: u8 = 0x12;
     /// Temperature sensor control
     pub const TEMP_CONTROL: u8 = 0x18;
+    /// Write to the temperature register (overrides the sensor reading)
+    pub const WRITE_TEMP_REG: u8 = 0x1A;
     /// Master activation command
     pub const MASTER_ACTIVATE: u8 = 0x20;
     /// Display update control 1
@@ -74,6 +76,32 @@ pub enum Ssd168xRefreshMode {
     /// and write both colour channels for that region, still refreshing on `Full`. This matches
     /// GxEPD2's `GxEPD2_154_Z90c`, where `partial_refresh_time == full_refresh_time`.
     Partial,
+    /// Full display update forced onto a faster waveform by overriding the temperature register
+    /// (`UPDATE_DISPLAY_CTRL2 = 0xC7`, preceded by a `WRITE_TEMP_REG = 0x5A` LUT reload).
+    ///
+    /// Ported from Good Display's `EPD_HW_Init_Fast()` / `EPD_Update_Fast()` reference for the
+    /// `GDEY0266Z90`; GxEPD2 has no counterpart, since `GxEPD2_266c` drives every update on `0xF7`.
+    ///
+    /// How much this buys depends on the panel's OTP waveform, so **measure it rather than assume**.
+    /// On a `GDEY0266Z90` it was 16.2 s against 20.0 s for [`Ssd168xRefreshMode::Full`] — a real
+    /// 19 % saving — on DKE glass, where Good Display quote only ~19 s against ~20 s for their own.
+    /// Same controller, same resolution, different waveform. A colour panel will not approach the
+    /// sub-second figures a monochrome SSD168x panel reaches in this mode either way, because the
+    /// red pigment has no differential waveform to skip.
+    FastFull,
+    /// Differential base-map load (`UPDATE_DISPLAY_CTRL2 = 0xF4`), priming the controller's "old"
+    /// frame buffer before a run of [`Ssd168xRefreshMode::Partial`] updates.
+    ///
+    /// Ported from Good Display's `EPD_Update_BaseMap()`. Write both colour planes, refresh on this
+    /// mode, then re-write the planes so the controller's previous-frame copy matches what is on
+    /// glass — the vendor reference does this by hand and `epdsi` leaves it to the caller. Skipping
+    /// the base map makes subsequent partial updates unstable rather than erroring.
+    ///
+    /// The byte itself is not a dedicated base-map opcode: `0xF4` is a display update sequence
+    /// without the closing OSC-disable step, and GxEPD2's `GxEPD2_266_BN` (DKE's monochrome
+    /// `DEPG0266BN`) uses the same byte as its ordinary full update, after an explicit power-on.
+    /// The base-map role is how Good Display's demo uses it, not something the SSD168x enforces.
+    BaseMap,
 }
 
 /// Generic SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
@@ -495,11 +523,37 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
+        // Fast waveform: load the sensor temperature, override the register with 90 °C, then
+        // reload the OTP LUT at that temperature. Good Display issue this from a dedicated
+        // `EPD_HW_Init_Fast()` that skips driver output control, data entry mode and the RAM
+        // window entirely, leaving the fast pass on power-on defaults; issued here instead, so
+        // `init_sequence` — and therefore the window — is always the one that ran. Mirrors how
+        // `Ssd1677Controller` handles its own `FastFull` temperature override.
+        if self.refresh_mode == Ssd168xRefreshMode::FastFull {
+            bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xB1])?;
+            bus.send_command(cmd::MASTER_ACTIVATE)?;
+            delay.delay_ms(1);
+            bus.wait_busy_with_delay(delay, true)?;
+
+            bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[0x5A, 0x00])?;
+
+            bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x91])?;
+            bus.send_command(cmd::MASTER_ACTIVATE)?;
+            delay.delay_ms(1);
+            bus.wait_busy_with_delay(delay, true)?;
+        }
+
         let mode_byte = match self.refresh_mode {
             Ssd168xRefreshMode::Full => 0xF7,
             Ssd168xRefreshMode::Partial => 0xFC,
+            Ssd168xRefreshMode::FastFull => 0xC7,
+            Ssd168xRefreshMode::BaseMap => 0xF4,
         };
 
+        // Every mode goes through the same per-variant power envelope. The vendor references
+        // activate the mode byte bare, but 0xC7 and 0xF4 are self-contained clock/analog
+        // sequences just like 0xF7 and 0xFC, so wrapping them in the SSD1680 arm's 0xE0/0x83
+        // is a superset of the vendor sequence rather than a change to it.
         match self.variant {
             Ssd168xVariant::Ssd1680 => {
                 // Power on sequence
@@ -508,7 +562,8 @@ where
                 delay.delay_ms(1);
                 bus.wait_busy_with_delay(delay, true)?;
 
-                // Display update sequence (Full: OTP LUT, Partial: built-in fast LUT)
+                // Display update sequence (Full: OTP LUT, Partial: built-in fast LUT,
+                // FastFull: OTP LUT reloaded at the overridden temperature, BaseMap: base-map load)
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
                 bus.send_command(cmd::MASTER_ACTIVATE)?;
                 delay.delay_ms(1);

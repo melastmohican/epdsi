@@ -147,6 +147,48 @@ fn test_uc8253_se0352n14_epd_driver_instantiation_and_paged_rendering() {
 }
 
 #[test]
+fn test_ssd1680_gdey0266z90_epd_driver_instantiation_and_paged_rendering() {
+    let spi = MockSpi;
+    let dc = MockOutputPin;
+    let rst = MockOutputPin;
+    let busy = MockInputPin { is_high: true };
+    let mut delay = MockDelay;
+
+    let bus = SpiBusWrapper::new(spi, dc, rst, busy);
+    let controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 152);
+    assert_eq!(driver.height(), 296);
+
+    driver.init(&mut delay).expect("Initialization failed");
+
+    // The Red plane is inverted relative to the Black/White plane: 0xFF is white in 0x24, but
+    // 0x00 is *no* red in 0x26.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .expect("Clear black/white frame failed");
+    driver
+        .clear_frame(ColorChannel::RedYellow, 0x00)
+        .expect("Clear red frame failed");
+
+    // 296 divides evenly into 8-row pages; 19 bytes per line.
+    let mut page_buffer = [0u8; (152 * 8) / 8];
+    render_paged(
+        &mut driver,
+        &mut delay,
+        ColorChannel::BlackWhite,
+        &mut page_buffer,
+        8,
+        0xFF,
+        |page_buf| {
+            page_buf.set_pixel(10, page_buf.y_offset() + 5, true);
+        },
+    )
+    .expect("Paged rendering failed");
+}
+
+#[test]
 fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;

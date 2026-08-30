@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-30
+
+### Added
+
+- `GDEY0266Z90`, the 152 × 296 Tri-Color panel sold by Good Display under that name and by
+  Waveshare as the 2.66" e-Paper Module (B), with the GxEPD2 parity alias `GxEPD2_266c`. It needs no
+  controller variant: a register audit against `GxEPD2_266c` and the Waveshare and Good Display
+  reference drivers found the existing `Ssd168xVariant::Ssd1680` profile already drives it
+  byte-for-byte — same `0x01` gate count, `0x11` data entry, `0x3C` border, `0x18`/`0x21` control
+  bytes, RAM window arithmetic and `0xF7` refresh.
+
+  The one thing that will silently mis-render is ink polarity, because the two RAM planes disagree.
+  `0xFF` is white in the Black/White plane (`0x24`), but the Red plane (`0x26`) is **inverted**:
+  `0x00` is no red and a *set* bit is red. A white panel is therefore
+  `clear_frame(ColorChannel::BlackWhite, 0xFF)` plus `clear_frame(ColorChannel::RedYellow, 0x00)` —
+  the same asymmetry as the `GDEM0154Z90`, and the opposite of the `SE0352N14TNGA0`, which clears
+  both planes to `0x00`. All three C++ references write `~color` for this reason.
+
+  Verified on hardware: RP2350 Pico 2 over a Good Display DESPI-C02, all four refresh modes, both
+  planes rendering with correct polarity and orientation.
+- `Ssd168xRefreshMode::FastFull` and `Ssd168xRefreshMode::BaseMap`, ported from Good Display's
+  `GDEY0266Z90` reference driver — GxEPD2 has no counterpart, since `GxEPD2_266c` drives both its
+  full and its "partial" refresh on `0xF7`.
+
+  `FastFull` (`0xC7`) is preceded by the vendor's temperature override: load the sensor reading
+  (`0x22 0xB1`), write 90 °C into the temperature register (`0x1A 0x5A 0x00`), then reload the OTP
+  LUT at that temperature (`0x22 0x91`). Good Display issue this from a dedicated
+  `EPD_HW_Init_Fast()` that skips driver output control, data entry mode and the RAM window
+  entirely, leaving the fast pass on power-on defaults; `epdsi` issues it from `trigger_refresh`
+  instead, so the window set up by `init_sequence` always applies. This matches how
+  `Ssd1677RefreshMode::FastFull` already handles its own temperature override. How much it saves
+  depends on the panel's OTP waveform rather than the controller: measured at 16.2 s against 20.0 s
+  for `Full` on a `GDEY0266Z90` (DKE glass, a 19 % saving), where Good Display quote only ~19 s
+  against ~20 s for their own glass. No colour panel reaches the sub-second figures a monochrome
+  SSD168x panel does in this mode, because the red pigment has no differential waveform to skip.
+
+  `BaseMap` (`0xF4`) primes the controller's previous-frame buffer before a run of `Partial`
+  updates, which is a **monochrome-only** workflow. On a colour panel `0x26` is always the colour
+  plane, so seeding it with a Black/White image — correct on the `GDEM0213B74` — sets nearly every
+  bit and renders the region solid red. Measured on a `GDEY0266Z90`, `BaseMap` and `Partial` both
+  take ~19.9 s, indistinguishable from `Full`; they exist for parity with the reference driver.
+
+  `Full` and `Partial` keep their existing bytes and power envelope, so `GDEM0213B74` and
+  `GDEM0154Z90` are unaffected. Adding enum variants is source-breaking for downstream code that
+  matches `Ssd168xRefreshMode` exhaustively.
+
+### Changed
+
+- README gains a **Troubleshooting on real hardware** section. Every failure this project has hit
+  on hardware has been outside the register sequence — panel state, panel identity, the host board,
+  or the glass's waveform — and none of that was documented anywhere a `crates.io` user could reach
+  it. Covers power-cycle discipline, a symptom-to-cause table, decoding a part number to its driver
+  IC (the same 2.66" glass ships behind an SSD1680, a JD79651B or a UC8251d), and why timing figures
+  in these docs are reference points rather than guarantees.
+- README documents the cross-host method: run one identical diagnostic on a second host, because a
+  discrepancy then localises to the host rather than the driver. Includes the worked example that
+  identified a faulty ESP32-C3 module — two healthy hosts agreeing to a millisecond, one deviating
+  in both directions at once.
+- `adafruit-feather-thinkink-discovery` added to the hardware examples: Feather RP2040 ThinkInk,
+  with panels seated directly in the board's FPC socket. `GDEM0213B74` and `GDEY0266Z90` both
+  verified there, giving a fourth MCU family (Cortex-M0+) and a second independent host for the
+  SSD1680 timings — 3893 ms full and 1017 ms differential partial, against RP2350's 3894 / 1018.
+- `xiao-esp32c3-blinky` marked as bring-up in progress. The module used for that work was later
+  shown by substitution to be faulty, so its board-specific findings — including which panels do
+  and do not work on that host — are being re-tested. The three UC8253 fixes in 0.1.4 were made
+  chasing symptoms on it; all are kept, since each is independently justified by a vendor reference
+  rather than only by those symptoms.
+
 ## [0.1.4] - 2026-08-29
 
 ### Added

@@ -27,7 +27,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | Controller IC | Supported Panels | Resolution | Color Mode | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
-| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74` | 122 × 250 | Monochrome | 2.13" Monochrome (Adafruit 6383), Full/Partial refresh |
+| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`) | 122 × 250, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
@@ -41,15 +41,28 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 
 Colour panels have **no fast/differential waveform**. The red (or yellow) pigment is a
 heavier particle that needs the full OTP waveform to migrate, so *every* update on a
-Tri-Color or Quad-Color panel takes seconds — roughly 14 s on the `GDEM0154Z90`, and 16–20 s
-on the `SE0352N14TNGA0`, which for that reason exposes no partial mode at all
-(`Uc8253RefreshMode` is ignored under `Uc8253Variant::Se0352n14`).
+Tri-Color or Quad-Color panel takes seconds — roughly 14 s on the `GDEM0154Z90`, 18–20 s on the
+`GDEY0266Z90`, and 16–20 s on the `SE0352N14TNGA0`, which for that reason exposes no partial mode
+at all (`Uc8253RefreshMode` is ignored under `Uc8253Variant::Se0352n14`).
 
 `Ssd168xRefreshMode::Partial` drives `UPDATE_DISPLAY_CTRL2 = 0xFC`, selecting the
 controller's built-in fast LUT. That LUT only exists for monochrome panels. On a colour
 panel it is **not** a speed-up and actively breaks the image: the update runs at full-refresh
 speed anyway, and because the fast path only rewrites the Black/White RAM, all red content
 is dropped. Keep colour panels on `Ssd168xRefreshMode::Full`.
+
+`Ssd168xRefreshMode::FastFull` (`0xC7`, preceded by a `0x5A` temperature-register override that
+reloads the OTP LUT) does help, but how much depends on the glass rather than the controller —
+**measure it**. On a `GDEY0266Z90` it came out at 16.2 s against 20.0 s for `Full`, a 19 % saving,
+on DKE glass; Good Display quote only ~19 s against ~20 s for their own. Same IC, same resolution,
+different OTP waveform. No colour panel approaches the sub-second figures a monochrome SSD168x
+panel reaches, because the red pigment has no differential waveform to skip.
+
+`Ssd168xRefreshMode::BaseMap` (`0xF4`) primes the controller's previous-frame buffer before a run
+of `Partial` updates. That is a **monochrome-only** workflow: on a colour panel `0x26` is always
+the colour plane, never a previous-frame buffer, so seeding it with a Black/White image — correct
+on the `GDEM0213B74` — sets nearly every bit and renders the region solid red. Both modes exist for
+parity with Good Display's reference driver; on a colour panel neither is faster than `Full`.
 
 Region-limited updates still work on colour panels — narrow the RAM window with
 `set_window`/`set_cursor`, write **both** colour channels for that region, then refresh on
@@ -290,19 +303,49 @@ epd.refresh(&mut delay).unwrap();
 epd.sleep(&mut delay).unwrap();
 ```
 
+### 10. Usage Example (Ssd1680Controller + GDEY0266Z90 Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Same SSD1680 profile as the monochrome GDEM0213B74 above — no variant selection needed.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT)
+    .with_refresh_mode(Ssd168xRefreshMode::Full);
+
+// Build driver for the Good Display GDEY0266Z90 / Waveshare 2.66" (B), 152x296 Tri-Color
+let mut epd = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// The two RAM planes disagree on ink polarity: 0xFF is white in the Black/White plane, but the
+// Red plane is inverted, so 0x00 is *no* red and a set bit is red. Both vendor drivers and
+// GxEPD2 write `~color` for this reason.
+epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
+epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
+epd.refresh(&mut delay).unwrap();
+
+// sleep() enters deep sleep; call init() again before the next frame.
+epd.sleep(&mut delay).unwrap();
+```
+
 ## Examples on real hardware
 
 The snippets above are `rust,ignore` because they need real SPI and GPIO. For complete,
 flashable programs covering every supported controller, see:
 
 - [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal`, blocking (Cortex-M33)
+- [`adafruit-feather-thinkink-discovery`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery) — Adafruit Feather RP2040 ThinkInk, `rp-hal` via BSP, blocking (Cortex-M0+). Panels seat directly in the board's 24-pin FPC socket, so there is no carrier or jumper wiring
 - [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal`, async (Xtensa)
-- [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky) — Seeed XIAO ESP32-C3 on the ePaper Driver Board for XIAO, `esp-hal`, blocking (RISC-V)
+- [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky) — Seeed XIAO ESP32-C3 on the ePaper Driver Board for XIAO, `esp-hal`, blocking (RISC-V). **Bring-up in progress**: the module used for that work was later found to be faulty, so its board-specific findings are being re-tested
 
 | Example | Controller | Panel | Board |
 | :--- | :--- | :--- | :--- |
 | [`ssd1681_gdem0154z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `Ssd1681Controller` | `GDEM0154Z90` — 1.54" Tri-Color | RP2350 |
 | [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2350 |
+| [`ssd1680_gdey0266z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `Ssd1680Controller` | `GDEY0266Z90` — 2.66" Tri-Color | RP2350 |
+| [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2040 |
+| [`ssd1680_gdey0266z90_epd.rs`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `Ssd1680Controller` | `GDEY0266Z90` — 2.66" Tri-Color | RP2040 |
 | [`jd79661_zjy122250_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `Jd79661Controller` | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350 |
 | [`uc8253_gdey037t03_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `Uc8253Controller` | `GDEY037T03` — 3.7" Mono | RP2350 |
 | [`uc8253_se0352n14_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) | `Uc8253Controller` (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350 |
@@ -316,12 +359,150 @@ flashable programs covering every supported controller, see:
 
 Every supported controller has a working example, verified on hardware.
 
-The table lists at least one example per controller. `xiao-esp32c3-blinky` additionally ports the
-`Ssd1677`, `Ssd1680`, `Ssd1681` and `Jd79661` examples to RISC-V, keeping everything above
-`main()` byte-identical to the RP2350 originals — only board bring-up differs. That is the
-point of the `EpdPanel` / `EpdController` / `SpiBusWrapper` split: the same driver code
-runs unchanged across **Cortex-M33, RISC-V and Xtensa**, under two HAL families and both
-blocking and async executors.
+The table lists at least one example per controller; the sibling repositories port several of them
+to other hosts, keeping everything above `main()` byte-identical to the RP2350 originals so that
+only board bring-up differs. That is the point of the `EpdPanel` / `EpdController` /
+`SpiBusWrapper` split: the same driver code runs unchanged across **Cortex-M0+, Cortex-M33, RISC-V
+and Xtensa**, under two HAL families and both blocking and async executors.
+
+That portability is also a measurement, not just a claim. The `GDEM0213B74` on an SSD1680 gives a
+3894 ms full refresh and 1018 ms differential partial on RP2350, and 3893 / 1017 ms on a Feather
+RP2040 — the same numbers to within a millisecond, from identical driver code on two MCU families.
+Running one diagnostic across hosts is also how a failing board gets identified rather than
+mistaken for a driver defect; see [Troubleshooting](#3-a-different-microcontroller).
+
+## Troubleshooting on real hardware
+
+Every controller here is register-level parity with a vendor reference driver, and the tests assert
+exact SPI byte streams. So when a panel misbehaves, the register sequence is rarely the cause —
+across this project's bring-ups it has almost always been one of four things, and they are worth
+working in this order:
+
+1. **Panel state** — the panel is not in the condition you think it is.
+2. **Identity** — the panel is not the panel you think it is.
+3. **The board** — timing and power differ between MCUs even though the driver code does not.
+4. **The glass** — the waveform lives in the panel, and varies by supplier and batch.
+
+### 0. Power-cycle before you debug anything
+
+E-paper retains its last write, and the controller can be left latched busy by an interrupted run
+or a hot-swapped FPC. The *next* run then hits busy timeouts and looks broken — shifted content,
+refreshes returning instantly, refreshes that appear to hang. `hard_reset` does not clear it; only
+removing power does. Connect and disconnect FPCs with the board unpowered.
+
+**Time your refreshes.** It is the cheapest diagnostic there is, and it distinguishes "slow" from
+"never ran": a tri-colour panel physically cannot update in 100 ms, so a refresh that returns that
+fast did not drive the display. Equally, a refresh reported as 100 ms when the panel demonstrably
+takes 3.9 s means your instrument is broken, not the driver.
+
+Reason from a clean run only. Never from an interrupted one, or from any run after one.
+
+### 1. Is it the panel you think it is?
+
+The same glass ships behind different controllers. DKE's 2.66" family is the cautionary case — all
+152 × 296, all 24-pin, visually identical:
+
+| Part number | Driver IC |
+| :--- | :--- |
+| `DEPG0266RW`**`S800`**`F34HP` | SSD1680 — works with `Ssd1680Controller` |
+| `DEPG0266RW`**`F51B`**`F1` | JD79651B — **not supported by that controller** |
+| `DEPG0266RW`**`U25D`**`F15` | UC8251d — **not supported by that controller** |
+
+Read the label before assuming a driver fault. [CursedHardware/epd-datasheet](https://github.com/CursedHardware/epd-datasheet/blob/main/epd-display.csv)
+maps part numbers to driver ICs for most vendors, and grepping a part-number stem reveals the
+vendor's own encoding by comparison.
+
+The second identity trap is internal: `EpdController` never sees the `PANEL` type, so a
+**controller/panel variant mismatch cannot be caught at compile time**. `Ssd168xVariant`,
+`Uc8253Variant`, `PervasiveDriverVariant` and `PervasiveBwryVariant` all render inverted or blank
+rather than returning an error. If a panel needs a non-default variant, its module docs say so.
+
+### 2. Symptom lookup
+
+| Symptom | Likely cause |
+| :--- | :--- |
+| Nothing at all; BUSY never releases | Wiring or power. Check `busy_active_high` matches the panel — several panels here are active-**low**. On EXT3-1 boards with panels ≤ 3.7", the **J3 jumper must be OPEN** |
+| Refresh returns in milliseconds | Controller latched busy from an earlier interrupted run — power-cycle (see above) |
+| Whole panel comes up black, or stays white | Wrong `clear_frame` fill byte for that plane's ink polarity |
+| Colour panel: a region or the whole screen is solid red/yellow | Colour-plane polarity. On SSD168x tri-colour, `0x24` wants `0xFF` for white but `0x26` wants `0x00` for *no* colour — the planes disagree |
+| Image mirrored or sheared | `WIDTH`/`HEIGHT` transposed. `WIDTH` is the **short** axis; vendors advertise the landscape figure |
+| Image correct but rotated 180° | Mounting or connector orientation, not a driver fault — use `DisplayRotation::Rotate180` |
+| Content shifted a few pixels per row | Row stride. A width that is not a byte multiple still occupies `width.div_ceil(8)` bytes |
+| Colour vanishes on a partial update | `Partial` on a colour panel — the fast LUT is monochrome-only and drops the colour plane |
+| Correct geometry, weak colour or ghosting | The glass's waveform, not the registers — see §4 |
+
+### 3. A different microcontroller
+
+The same driver code runs across Cortex-M0+, Cortex-M33, RISC-V and Xtensa. When a panel works on
+one board and not another, the difference has consistently been **timing, power, or the board
+itself — not logic**. Real examples from this project, all found on one ESP32-C3 and none of which
+reproduced on RP2350:
+
+- The controller dropped its charge pump after an update, so the next bare refresh was silently
+  ignored — BUSY never asserted, the poll read idle, and `refresh` returned in 0 ms having drawn
+  nothing. Fixed by issuing `POWER_ON` before every refresh.
+- BUSY was not asserted instantly, and no fixed settling delay could be tuned to cover it — 10 ms
+  held on some refreshes and missed others in the same run. Fixed by waiting for the BUSY edge
+  (`SpiBusWrapper::wait_busy_assert`), bounded so a missing panel still reads idle rather than
+  hanging.
+- The reset pulse was 2 ms, matching the vendor driver, and latched only intermittently. Now 30 ms.
+
+**That module was later found to be faulty**, by substitution: a different MCU ran clean on the
+same carrier, cable and panel. All three changes are kept because each is independently justified
+by a vendor reference rather than only by those symptoms — but the episode is the lesson. Symptoms
+chased on a single board can be the board.
+
+So the method matters more than the list above: **run one identical diagnostic on a second host.**
+If the code is the same and only the host differs, a discrepancy localises to the host. Worked
+example, all on one 2.13" panel and one driver build:
+
+| Host | Full refresh | Differential partial |
+| :--- | ---: | ---: |
+| RP2350 | 3894 ms | 1018 ms |
+| Feather RP2040 | 3893 ms | 1017 ms |
+| ESP32-C3, healthy | ~3891 ms | ~1017 ms |
+| ESP32-C3, faulty module | 7450 ms | 98 ms |
+
+Two healthy hosts agreeing to a millisecond, and one host deviating in *both* directions at once,
+is not a driver result. Note the shape of the bad row: too slow **and** too fast. A uniform stretch
+would suggest a slow clock; deviation in both directions says the waveform is not executing as
+specified, which is electrical.
+
+So: suspect supply decoupling, cables and connectors, SPI clock, reset timing, and the board
+itself, before suspecting registers.
+
+### 4. A different panel batch or glass vendor
+
+Waveshare, Good Display and DKE sell the same panel, and a module may ship with glass from any of
+them — the `GDEY0266Z90` supported here was brought up on DKE glass stamped `DEPG0266RWS800F34HP`.
+Electrically that is fine, and it is checkable rather than assumed: GxEPD2's DKE driver
+(`GxEPD2_266_BN`) and its Good Display driver (`GxEPD2_266c`) have identical init register sets.
+
+What *does* differ is the **OTP waveform**, which lives in the panel and is not selected by any
+code here. Measured on a `GDEY0266Z90`, `Ssd168xRefreshMode::FastFull` took **16.2 s against 20.0 s**
+for `Full` — a real 19 % saving — where Good Display quote only ~19 s against ~20 s on their own
+glass. Same IC, same resolution, different glass.
+
+Two consequences worth internalising:
+
+- **Every timing figure in these docs is a reference point, not a guarantee.** Measure on the panel
+  in front of you. The `ssd1680_gdey0266z90_epd` example logs its own refresh durations for exactly
+  this reason.
+- **Weak or pink colour, ghosting, uneven ink density and a different refresh duration are waveform
+  symptoms, not register faults.** No amount of register auditing fixes them, and nothing in `epdsi`
+  can select a different waveform.
+
+### Debugging discipline
+
+Distilled from the bring-ups behind this crate, in rough order of how much time each has saved:
+
+- **Suspect hardware and panel state before software.** Running stock Arduino GxEPD2 across a
+  couple of boards has twice found in one experiment what hours of driver analysis did not.
+- **Validate any new diagnostic against a known measurement** before trusting what it tells you.
+- **Watch the panel, not the log.** A hand-rolled trigger sequence once reported entirely plausible
+  timings while never driving the display at all.
+- **Change one thing at a time**, and power-cycle between attempts.
+- **Reproduce on a second host before concluding anything about the driver** — see §3.
 
 ## License
 

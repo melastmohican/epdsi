@@ -10,6 +10,7 @@ This skill provides step-by-step instructions for auditing, validating, and main
 | `epdsi` controller | File | Panel / GxEPD2 alias | GxEPD2 C++ reference header/cpp |
 | :--- | :--- | :--- | :--- |
 | `Ssd1680Controller` / `Ssd168xController` | `src/controllers/ssd168x.rs` | `GDEM0213B74` (`GxEPD2_213_B74`) | `src/epd/GxEPD2_213_B74.h` & `.cpp` |
+| `Ssd1680Controller` / `Ssd168xController` | `src/controllers/ssd168x.rs` | `GDEY0266Z90` (`GxEPD2_266c`) | `src/epd3c/GxEPD2_266c.h` & `.cpp` |
 | `Ssd1681Controller` / `Ssd168xController` | `src/controllers/ssd168x.rs` | `GDEM0154Z90` (`GxEPD2_154_D67`) | `src/epd3c/GxEPD2_154_D67.h` & `.cpp` |
 | `Ssd1677Controller` | `src/controllers/ssd1677.rs` | `GDEQ0426T82` (`GxEPD2_426_GDEQ0426T82`) | `src/epd/GxEPD2_426_GDEQ0426T82.h` & `.cpp` |
 | `Uc8253Controller` (`Uc8253Variant::Gdey037t03`) | `src/controllers/uc8253.rs` | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | `src/epd/GxEPD2_370_GDEY037T03.h` & `.cpp` |
@@ -58,6 +59,35 @@ Before auditing or writing code for a Good Display / Waveshare panel, verify pan
   - Full refresh sequence: `0xF7` or `0xC7` + `0x20` Master Activation.
   - Partial refresh sequence: `0xFF` or custom LUT write + `0x0C` / `0xC7` + `0x20` Master Activation.
 - **Deep Sleep (`0x10`)**: payload `&[0x01]` (Mode 1 deep sleep).
+
+Additional checkpoints for the Tri-Color `GDEY0266Z90` (`src/epd3c/GxEPD2_266c.h` & `.cpp`), which
+shares the `Ssd168xVariant::Ssd1680` profile unchanged:
+
+- **Ink polarity differs between planes**, and mis-rendering is silent. `0x24` (Black/White) uses
+  the monochrome convention (`0xFF` white); `0x26` (Red) is **inverted** — `0x00` is no red, a set
+  bit is red. GxEPD2's `writeImage`/`writeScreenBuffer` write `~color`, as do Waveshare's
+  `epd2in66b.cpp` and Good Display's `EPD_WhiteScreen_ALL()`. Confirm any change keeps
+  `clear_frame(BlackWhite, 0xFF)` + `clear_frame(RedYellow, 0x00)` as the white-panel pair.
+- **Refresh is full-screen only.** `GxEPD2_266c` sets `hasPartialUpdate = true` but notes "refresh
+  is full screen", with `partial_refresh_time == full_refresh_time == 18000` ms and
+  `hasFastPartialUpdate = false`; its `_Update_Part()` sends the same `0xF7` as `_Update_Full()`.
+- **`Ssd168xRefreshMode::FastFull` (`0xC7`) and `BaseMap` (`0xF4`) have no GxEPD2 counterpart.**
+  Audit them against Good Display's demo instead —
+  `~/Src/adafruit-feather-thinkink-examples/arduino/good_display/GDEY0266Z90/Display_EPD_W21.cpp`
+  (`EPD_HW_Init_Fast()` / `EPD_Update_Fast()` / `EPD_Update_BaseMap()`). Note the deliberate
+  deviation: `epdsi` issues the `0x22 0xB1` / `0x1A 0x5A 0x00` / `0x22 0x91` temperature-override
+  preamble from `trigger_refresh`, not from a separate fast init, because the vendor's fast init
+  skips driver output control, data entry mode and the RAM window and so runs on power-on defaults.
+- **Second reference for the same glass.** `src/epd/GxEPD2_266_BN.h` & `.cpp` drive DKE's
+  monochrome `DEPG0266BN` — the same 2.66" 152 × 296 family, identified in GxEPD2's display
+  selection headers by the `FPC7510` ribbon marking that DKE glass carries. Its `_InitDisplay()`
+  register set and values are identical to `GxEPD2_266c`'s (only the `0x21`/`0x18` ordering
+  differs), so it is a useful cross-check when auditing the init. It diverges at refresh: an
+  explicit `_PowerOn` (`0x22 0xf8`) then `0xF4` full / `0xCC` partial, with genuine fast partial
+  update (4 s full, 800 ms partial) that the tri-color panel cannot match.
+- **Power envelope.** `epdsi` wraps every mode byte in the SSD1680 arm's `0xE0` … `0x83`; GxEPD2
+  activates `0xF7` bare and reserves `0xf8`/`0x83` for its explicit `_PowerOn`/`_PowerOff`. This is
+  a pre-existing superset shared with `GDEM0213B74`, not a `GDEY0266Z90`-specific deviation.
 
 ### 2. SSD1677 Controller (`src/controllers/ssd1677.rs`)
 - **Reference**: `src/epd/GxEPD2_426_GDEQ0426T82.h` & `.cpp` (`GxEPD2_426_GDEQ0426T82`)

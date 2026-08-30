@@ -218,6 +218,146 @@ fn test_ssd1680_trigger_refresh_full_and_partial() {
 }
 
 #[test]
+fn test_ssd1680_gdey0266z90_panel_dimensions() {
+    assert_eq!(GDEY0266Z90::WIDTH, 152);
+    assert_eq!(GDEY0266Z90::HEIGHT, 296);
+    assert_eq!(GxEPD2_266c::WIDTH, 152);
+    assert_eq!(GxEPD2_266c::HEIGHT, 296);
+}
+
+#[test]
+fn test_ssd1680_gdey0266z90_init_sequence() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut delay = DummyDelay;
+
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    // Same register set and byte values as GxEPD2_266c::_InitDisplay(); only the ordering of the
+    // mutually independent 0x3C / 0x21 / 0x18 / 0x11 writes differs.
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x12),                // SW_RESET
+            SpiRecord::Command(0x01),                // DRIVER_CONTROL
+            SpiRecord::Data(vec![0x27, 0x01, 0x00]), // 296-1 = 295 = 0x0127
+            SpiRecord::Command(0x3C),                // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x05]),
+            SpiRecord::Command(0x21), // DISPLAY_UPDATE_CTRL1
+            SpiRecord::Data(vec![0x00, 0x80]),
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44),                      // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x12]),             // (152-1)/8 = 18 = 0x12
+            SpiRecord::Command(0x45),                      // SET_RAMYPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0x27, 0x01]), // 295 = 0x0127
+            SpiRecord::Command(0x4E),                      // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+        ]
+    );
+}
+
+#[test]
+fn test_ssd1680_gdey0266z90_clear_frame_plane_polarity() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(bus);
+
+    // 152 is byte-aligned: 19 bytes per row x 296 rows.
+    let plane_bytes = 152 / 8 * 296;
+    assert_eq!(plane_bytes, 5624);
+
+    // The two planes disagree on ink polarity: 0xFF is white in the Black/White plane, but the
+    // Red plane is inverted, so 0x00 is *no* red. GxEPD2 and both vendor drivers write ~color.
+    for (channel, fill, expected_cmd) in [
+        (ColorChannel::BlackWhite, 0xFFu8, 0x24u8),
+        (ColorChannel::RedYellow, 0x00u8, 0x26u8),
+    ] {
+        bus_backend.records.borrow_mut().clear();
+        driver.clear_frame(channel, fill).unwrap();
+        let records = bus_backend.records.borrow().clone();
+
+        assert_eq!(records[0], SpiRecord::Command(expected_cmd));
+
+        // send_data_repeated chunks at 64 bytes, so assert the total rather than one record.
+        let written: Vec<u8> = records[1..]
+            .iter()
+            .flat_map(|record| match record {
+                SpiRecord::Data(bytes) => bytes.clone(),
+                SpiRecord::Command(byte) => panic!("unexpected command 0x{byte:02X} in frame data"),
+            })
+            .collect();
+        assert_eq!(written.len(), plane_bytes);
+        assert!(written.iter().all(|&byte| byte == fill));
+    }
+}
+
+#[test]
+fn test_ssd1680_trigger_refresh_fast_full_and_base_map() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = DummyDelay;
+
+    // FastFull: Good Display's temperature override (load sensor, force 90 C, reload the OTP LUT)
+    // ahead of the 0xC7 display update, all inside the SSD1680 power envelope.
+    let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT)
+        .with_refresh_mode(Ssd168xRefreshMode::FastFull);
+    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xB1]), // load temperature from the internal sensor
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x1A),
+            SpiRecord::Data(vec![0x5A, 0x00]), // override the register with 90 C
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0x91]), // reload the OTP LUT at that temperature
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xE0]),
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xC7]),
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0x83]),
+            SpiRecord::Command(0x20),
+        ]
+    );
+
+    // BaseMap: no preamble, just the 0xF4 base-map load.
+    bus_backend.records.borrow_mut().clear();
+    let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT)
+        .with_refresh_mode(Ssd168xRefreshMode::BaseMap);
+    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xE0]),
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xF4]),
+            SpiRecord::Command(0x20),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0x83]),
+            SpiRecord::Command(0x20),
+        ]
+    );
+}
+
+#[test]
 fn test_ssd1680_sleep() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
