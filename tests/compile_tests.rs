@@ -105,6 +105,48 @@ fn test_ssd1681_epd_driver_instantiation_and_paged_rendering() {
 }
 
 #[test]
+fn test_uc8253_se0352n14_epd_driver_instantiation_and_paged_rendering() {
+    let spi = MockSpi;
+    let dc = MockOutputPin;
+    let rst = MockOutputPin;
+    let busy = MockInputPin { is_high: true }; // Active-low BUSY: high means idle
+    let mut delay = MockDelay;
+
+    let bus = SpiBusWrapper::new(spi, dc, rst, busy);
+    let controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+        .with_variant(Uc8253Variant::Se0352n14);
+    let mut driver = EpdBuilder::<_, SE0352N14TNGA0>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 240);
+    assert_eq!(driver.height(), 360);
+
+    driver.init(&mut delay).expect("Initialization failed");
+
+    // Both planes clear to 0x00 on this panel: set bits are ink, not the mono convention.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0x00)
+        .expect("Clear black/white frame failed");
+    driver
+        .clear_frame(ColorChannel::RedYellow, 0x00)
+        .expect("Clear red frame failed");
+
+    // 360 divides evenly into 20-row pages; 30 bytes per line.
+    let mut page_buffer = [0u8; (240 * 20) / 8];
+    render_paged(
+        &mut driver,
+        &mut delay,
+        ColorChannel::BlackWhite,
+        &mut page_buffer,
+        20,
+        0x00,
+        |page_buf| {
+            page_buf.set_pixel(10, page_buf.y_offset() + 5, true);
+        },
+    )
+    .expect("Paged rendering failed");
+}
+
+#[test]
 fn test_jd79661_epd_driver_instantiation_and_paged_rendering() {
     let spi = MockSpi;
     let dc = MockOutputPin;

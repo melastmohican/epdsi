@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-29
+
+### Added
+
+- `SE0352N14TNGA0`, the 240 × 360 Tri-Color panel in the Waveshare 3.52" e-Paper HAT (B).
+- `Uc8253Variant`, selecting the UC8253 register profile. The IC is shared with the existing
+  `GDEY037T03`, but the two panels are not interchangeable behind one profile: the 3.52" needs an
+  explicit `RESOLUTION`/`BOOSTER_SOFT_START` init, puts Black/White on the *other* RAM plane
+  (`0x10`, not `0x13`), and must not have `CDI` re-issued at refresh time — `0x97` would move the
+  DDX polarity bits away from the `0x87` set at init and invert black and white. Picking the wrong
+  variant renders inverted or blank rather than erroring, so it has to be named:
+  `Uc8253Controller::new(…).with_variant(Uc8253Variant::Se0352n14)`.
+
+  `Uc8253Controller::new` still defaults to the `GDEY037T03` profile, so existing code is
+  unaffected. Register sequences follow Waveshare's `3in52_e-Paper_B` reference driver and its
+  Adafruit_EPD port; there is no GxEPD2 driver for this panel to audit against.
+
+  Note that on this panel `0x00` is white in *both* RAM planes — the opposite of the monochrome
+  UC8253 panel — so both channels clear with `clear_frame(channel, 0x00)`.
+- `SpiBusWrapper::wait_busy_assert`, waiting for BUSY to assert with a bounded timeout and
+  reporting whether it was observed. A panel that never asserts returns `false` rather than
+  erroring or hanging, so "a missing panel reads idle" still holds.
+
+### Fixed
+
+- `Uc8253Variant::Se0352n14` now issues `POWER_ON` before each `DISPLAY_REFRESH`. The controller
+  drops its charge pump after an update, so a bare `DISPLAY_REFRESH` on the next frame was silently
+  ignored: BUSY never asserted, the poll read idle, and `refresh` returned in **0 ms** having drawn
+  nothing. Waveshare's reference avoids this by re-running its entire init — which begins with
+  `POWER_ON` — before every display operation, one refresh per init; the original port modelled the
+  power as staying up between frames, which was wrong.
+- Both UC8253 variants now wait for BUSY to *assert* after `DISPLAY_REFRESH` before waiting for it
+  to clear. Polling for completion too early reads "idle" and reports a refresh that is still
+  running; anything written next lands in controller RAM mid-update and the panel stays permanently
+  one frame behind, rendering the current frame as streaked noise. A fixed settling delay could not
+  be made reliable — a 10 ms guard held on some refreshes and missed others in the same run — so
+  the wait is for the edge, bounded by a timeout. It costs one poll on hardware that behaves.
+
+  This changes timing only, not the command stream, and the `GDEY037T03` fast-partial path is
+  unaffected: only an already-broken panel pays the timeout.
+- `Uc8253Variant::Se0352n14` holds RST low for 30 ms during init, matching Pervasive Displays'
+  reference driver for this panel family. Waveshare's 2 ms proved marginal: the reset latched only
+  intermittently, and a reset that does not take leaves the controller ignoring `POWER_ON` and
+  `DISPLAY_REFRESH` alike, failing at a random frame each run.
+
+  All three faults reproduce on a XIAO ESP32-C3 and none on an RP2350, which polls late enough and
+  resets long enough to hide them.
+
 ## [0.1.3] - 2026-08-23
 
 ### Added
@@ -125,7 +173,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/melastmohican/epdsi/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/melastmohican/epdsi/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/melastmohican/epdsi/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/melastmohican/epdsi/compare/v0.1.0...v0.1.1

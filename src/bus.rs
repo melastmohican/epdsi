@@ -125,6 +125,39 @@ where
         Ok(())
     }
 
+    /// Waits for BUSY to *assert*, up to `timeout_ms`, reporting whether it was observed.
+    ///
+    /// Controllers do not raise BUSY the instant a command lands, and the host may still be
+    /// draining its SPI FIFO when the write call returns. Polling for completion in that window
+    /// reads "idle" and concludes an update finished before it started — the panel then refreshes
+    /// for seconds in the background while the caller writes into RAM underneath it.
+    ///
+    /// A fixed settling delay does not solve this reliably: the assertion latency varies with the
+    /// host, the command and the panel's state, so any constant is both too long sometimes and too
+    /// short others. Waiting for the edge adapts, and the timeout bounds the cost when the panel
+    /// genuinely is not responding.
+    ///
+    /// Returns `false` on timeout rather than erroring — a panel that never asserts is a real
+    /// condition worth reporting, not a bus fault. Follow this with [`Self::wait_busy_with_delay`]
+    /// to wait for the operation to finish; that call returns immediately if BUSY never asserted,
+    /// so a missing panel still cannot hang.
+    ///
+    /// `busy_active_high`: `true` if HIGH indicates busy, `false` if LOW indicates busy.
+    pub fn wait_busy_assert<DELAY: DelayNs>(
+        &mut self,
+        delay: &mut DELAY,
+        busy_active_high: bool,
+        timeout_ms: u32,
+    ) -> SpiBusResult<SPI::Error, DC::Error, RST::Error, BUSY::Error, bool> {
+        for _ in 0..timeout_ms {
+            if self.busy.is_high().map_err(EpdBusError::Busy)? == busy_active_high {
+                return Ok(true);
+            }
+            delay.delay_ms(1);
+        }
+        Ok(false)
+    }
+
     /// Sends a single command byte over SPI with DC pin driven LOW.
     pub fn send_command(
         &mut self,

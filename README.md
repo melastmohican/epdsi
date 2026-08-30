@@ -29,7 +29,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
 | **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74` | 122 × 250 | Monochrome | 2.13" Monochrome (Adafruit 6383), Full/Partial refresh |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
-| **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | 240 × 416 | Monochrome | 3.7" Monochrome (Adafruit 6395), Active-Low BUSY, Full/FastFull/Partial/FastPartial refresh |
+| **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
 | **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | Spectra 6 (4bpp) | 7.3" six-colour E Ink Spectra 6 / `GDEP073E01(E6)` — black, white, red, yellow, blue, green. `SevenColor::Orange` is ACeP-7 only and **not** renderable here (Seeed reTerminal E1002) |
 | **Pervasive Displays** (`PervasiveBwController`) | `E2266KS0C1` (`EPD_266_KS_0C`), `E2290KS0F1` (`EPD_290_KS_0F`) | 152 × 296, 168 × 384 | Monochrome | Pervasive Displays 2.66" (Driver C) & 2.90" (Driver F) Panels |
@@ -41,7 +41,9 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 
 Colour panels have **no fast/differential waveform**. The red (or yellow) pigment is a
 heavier particle that needs the full OTP waveform to migrate, so *every* update on a
-Tri-Color or Quad-Color panel takes seconds — roughly 14 s on the `GDEM0154Z90`.
+Tri-Color or Quad-Color panel takes seconds — roughly 14 s on the `GDEM0154Z90`, and 16–20 s
+on the `SE0352N14TNGA0`, which for that reason exposes no partial mode at all
+(`Uc8253RefreshMode` is ignored under `Uc8253Variant::Se0352n14`).
 
 `Ssd168xRefreshMode::Partial` drives `UPDATE_DISPLAY_CTRL2 = 0xFC`, selecting the
 controller's built-in fast LUT. That LUT only exists for monochrome panels. On a colour
@@ -214,7 +216,34 @@ epd.refresh(&mut delay).unwrap();
 epd.sleep(&mut delay).unwrap();
 ```
 
-### 7. Usage Example (Ssd1677Controller + GDEQ0426T82 Panel)
+### 7. Usage Example (Uc8253Controller + SE0352N14TNGA0 Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Same UC8253 IC as the GDEY037T03 above, but a different register profile: the variant is
+// not optional here. The default profile's init, RAM plane order and CDI value all differ,
+// and picking it renders inverted or blank rather than erroring.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+    .with_variant(Uc8253Variant::Se0352n14);
+
+// Build driver for the Waveshare 3.52" e-Paper HAT (B), 240x360 Tri-Color
+let mut epd = EpdBuilder::<_, SE0352N14TNGA0>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// 0x00 is white in BOTH planes on this panel — the opposite of the monochrome UC8253
+// panel's 0xFF. Set bits are ink.
+epd.clear_frame(ColorChannel::BlackWhite, 0x00).unwrap();
+epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
+epd.refresh(&mut delay).unwrap();
+
+// sleep() enters deep sleep; call init() again before the next frame.
+epd.sleep(&mut delay).unwrap();
+```
+
+### 8. Usage Example (Ssd1677Controller + GDEQ0426T82 Panel)
 
 ```rust,ignore
 use epdsi::prelude::*;
@@ -232,7 +261,7 @@ epd.refresh(&mut delay).unwrap();
 epd.sleep(&mut delay).unwrap();
 ```
 
-### 8. Usage Example (PervasiveBwryController + E2154QS0F1 Panel)
+### 9. Usage Example (PervasiveBwryController + E2154QS0F1 Panel)
 
 ```rust,ignore
 use epdsi::prelude::*;
@@ -276,6 +305,7 @@ flashable programs covering every supported controller, see:
 | [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2350 |
 | [`jd79661_zjy122250_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `Jd79661Controller` | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350 |
 | [`uc8253_gdey037t03_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `Uc8253Controller` | `GDEY037T03` — 3.7" Mono | RP2350 |
+| [`uc8253_se0352n14_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) | `Uc8253Controller` (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350 |
 | [`ssd1677_gdeq0426t82_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `Ssd1677Controller` | `GDEQ0426T82` — 4.26" Mono | RP2350 |
 | [`pdi_e2266ks0c1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) | `PervasiveBwController` (Driver C) | `E2266KS0C1` — 2.66" Mono | RP2350 |
 | [`pdi_e2290ks0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) | `PervasiveBwController` (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 |
@@ -286,7 +316,7 @@ flashable programs covering every supported controller, see:
 
 Every supported controller has a working example, verified on hardware.
 
-The table lists one example per controller. `xiao-esp32c3-blinky` additionally ports the
+The table lists at least one example per controller. `xiao-esp32c3-blinky` additionally ports the
 `Ssd1677`, `Ssd1680`, `Ssd1681` and `Jd79661` examples to RISC-V, keeping everything above
 `main()` byte-identical to the RP2350 originals — only board bring-up differs. That is the
 point of the `EpdPanel` / `EpdController` / `SpiBusWrapper` split: the same driver code

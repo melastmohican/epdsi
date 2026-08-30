@@ -1,7 +1,7 @@
 //! # `epdsi` — E-Paper Display Serial Interface Framework
 //!
 //! A `no_std`, [`embedded-hal`] 1.0 compatible driver framework for Electronic Paper
-//! Displays (EPDs), covering seven driver ICs and ten panels behind one API.
+//! Displays (EPDs), covering seven driver ICs and eleven panels behind one API.
 //!
 //! Most EPD crates bind one driver IC to one panel. `epdsi` separates the two, so adding
 //! a panel to an existing controller is a single new file, and adding a controller does
@@ -36,14 +36,17 @@
 //! | [`Ssd1681Controller`] | [`GDEM0154Z90`] | 200 × 200 | Tri-Color |
 //! | [`Ssd1680Controller`] | [`GDEM0213B74`] | 122 × 250 | Monochrome |
 //! | [`Jd79661Controller`] | [`ZJY122250_0213AJH_E5`] / [`GDEY0213F51`] | 122 × 250 | Quad-Color |
-//! | [`Uc8253Controller`] | [`GDEY037T03`] | 240 × 416 | Monochrome |
+//! | [`Uc8253Controller`] | [`GDEY037T03`], [`SE0352N14TNGA0`] | 240 × 416, 240 × 360 | Monochrome, Tri-Color |
 //! | [`Ssd1677Controller`] | [`GDEQ0426T82`] | 800 × 480 | Monochrome |
 //! | [`Ed2208Controller`] | [`GDEP073E01`] | 800 × 480 | Spectra 6 (4 bpp) |
 //! | [`PervasiveBwController`] | [`E2266KS0C1`], [`E2290KS0F1`] | 152 × 296, 168 × 384 | Monochrome |
 //! | [`PervasiveBwryController`] | [`E2154QS0F1`], [`E2417QS0A3`] | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) |
 //!
 //! [`Ssd1680Controller`] and [`Ssd1681Controller`] are thin wrappers over the shared
-//! [`Ssd168xController`]. Many panels also carry vendor-parity aliases, such as
+//! [`Ssd168xController`]. [`Uc8253Controller`] carries two panel register profiles selected by
+//! `Uc8253Variant`, since the two UC8253 panels disagree on init, RAM plane order and refresh —
+//! [`SE0352N14TNGA0`] needs `Uc8253Variant::Se0352n14`. Many panels also carry
+//! vendor-parity aliases, such as
 //! `EPD_266_KS_0C` for [`E2266KS0C1`] or `GxEPD2_370_GDEY037T03` for [`GDEY037T03`].
 //!
 //! # Quick start
@@ -143,6 +146,7 @@
 //! [`ZJY122250_0213AJH_E5`]: panels::ZJY122250_0213AJH_E5
 //! [`GDEY0213F51`]: panels::GDEY0213F51
 //! [`GDEY037T03`]: panels::GDEY037T03
+//! [`SE0352N14TNGA0`]: panels::SE0352N14TNGA0
 //! [`GDEQ0426T82`]: panels::GDEQ0426T82
 //! [`GDEP073E01`]: panels::GDEP073E01
 //! [`E2266KS0C1`]: panels::E2266KS0C1

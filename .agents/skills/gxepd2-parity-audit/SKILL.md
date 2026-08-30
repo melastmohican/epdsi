@@ -12,7 +12,8 @@ This skill provides step-by-step instructions for auditing, validating, and main
 | `Ssd1680Controller` / `Ssd168xController` | `src/controllers/ssd168x.rs` | `GDEM0213B74` (`GxEPD2_213_B74`) | `src/epd/GxEPD2_213_B74.h` & `.cpp` |
 | `Ssd1681Controller` / `Ssd168xController` | `src/controllers/ssd168x.rs` | `GDEM0154Z90` (`GxEPD2_154_D67`) | `src/epd3c/GxEPD2_154_D67.h` & `.cpp` |
 | `Ssd1677Controller` | `src/controllers/ssd1677.rs` | `GDEQ0426T82` (`GxEPD2_426_GDEQ0426T82`) | `src/epd/GxEPD2_426_GDEQ0426T82.h` & `.cpp` |
-| `Uc8253Controller` | `src/controllers/uc8253.rs` | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | `src/epd/GxEPD2_370_GDEY037T03.h` & `.cpp` |
+| `Uc8253Controller` (`Uc8253Variant::Gdey037t03`) | `src/controllers/uc8253.rs` | `GDEY037T03` (`GxEPD2_370_GDEY037T03`) | `src/epd/GxEPD2_370_GDEY037T03.h` & `.cpp` |
+| `Uc8253Controller` (`Uc8253Variant::Se0352n14`) | `src/controllers/uc8253.rs` | `SE0352N14TNGA0` (Waveshare 3.52" HAT (B)) | **none** — see the UC8253 section below |
 | `Ed2208Controller` | `src/controllers/ed2208.rs` | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | `src/epd7c/GxEPD2_730c_GDEP073E01.h` & `.cpp` |
 | `Jd79661Controller` | `src/controllers/jd79661.rs` | `ZJY122250` / `GDEY0213F51` (`GxEPD2_213c_GDEY0213F51`) | `src/epd4c/GxEPD2_213c_GDEY0213F51.h` & `.cpp` |
 
@@ -68,6 +69,33 @@ Before auditing or writing code for a Good Display / Waveshare panel, verify pan
 - **Display Update Control 2 (`0x22` + `0x20`)**: Master activation trigger.
 
 ### 3. UC8253 Controller (`src/controllers/uc8253.rs`)
+
+This controller carries **two** panel register profiles, selected by `Uc8253Variant`. Only one of
+them is a GxEPD2 port; audit them against different references.
+
+**`Uc8253Variant::Se0352n14` has no GxEPD2 counterpart** — do not go looking in `GxEPD2/src/epd3c/`
+for it. It drives the Waveshare 3.52" e-Paper HAT (B) (`SE0352N14-TNG-A0`, FPC stamp
+`SE0352N01FPC-A`, 240 × 360 Tri-Color), and its references are:
+- [`waveshareteam/e-Paper`](https://github.com/waveshareteam/e-Paper/tree/master/E-paper_Separate_Program/3in52_e-Paper_B)
+  — `EPD_3in52b.c`, the primary reference.
+- `~/Src/adafruit-feather-thinkink-examples/arduino/Waveshare_3in52/EPD_3in52b.cpp` and
+  `.../Adafruit_EPD/ThinkInk_Waveshare_3in52/ThinkInk_Waveshare_3in52.ino` — the same sequence
+  verified on hardware, the second expressed as an `Adafruit_UC8253` init list.
+
+Checkpoints specific to that variant, each of which silently mis-renders rather than erroring:
+- **`CDI` (`0x50`) = `0x87`**, set once at init and **never re-issued at refresh**. `0x97` differs
+  in the DDX polarity bits and inverts black and white.
+- **RAM planes are swapped** relative to the `GDEY037T03` profile: Black/White on `0x10`, Red on
+  `0x13`.
+- **Ink polarity**: set bits are ink and `0x00` is white in **both** planes.
+- **`RESOLUTION` (`0x61`)** must be sent explicitly (`[0xF0, 0x01, 0x68]` for 240 × 360); the
+  `GDEY037T03` encodes its size in the Panel Setting bits instead.
+- **Refresh is a bare `DISPLAY_REFRESH` (`0x12`)** — power comes up in the init sequence and stays
+  up, so no `POWER_ON`/`POWER_OFF` pair. Full refresh only (~16–20 s); `Uc8253RefreshMode` is
+  ignored.
+
+The rest of this section covers `Uc8253Variant::Gdey037t03` (the default profile):
+
 - **Reference**: `src/epd/GxEPD2_370_GDEY037T03.h` & `.cpp` (`GxEPD2_370_GDEY037T03`)
 - **Panel Setting (`0x00`)**: `0x0E` soft reset; operational configuration `0x1F` / `0x0F` / `0x5F` (depending on refresh mode).
 - **Refresh Modes**:

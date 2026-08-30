@@ -380,6 +380,247 @@ fn test_uc8253_busy_low_polarity_smoke() {
     driver.sleep(&mut delay).expect("UC8253 sleep failed");
 }
 
+#[test]
+fn test_uc8253_se0352n14_panel_dimensions() {
+    // 240 x 360 is the raster, not Waveshare's advertised 360 x 240 viewing orientation:
+    // 30 bytes per line over 360 lines.
+    assert_eq!(SE0352N14TNGA0::WIDTH, 240);
+    assert_eq!(SE0352N14TNGA0::HEIGHT, 360);
+    assert_eq!(SE0352N14TNGA0::COLOR_MODE, ColorMode::TriColor);
+}
+
+/// Byte-for-byte parity with Waveshare's `EPD_3IN52B_Init()` and with the `ws_3in52b_init_code[]`
+/// list in the Adafruit_EPD port. Also pins the RESOLUTION bytes derived from the controller's
+/// configured dimensions to Waveshare's literal `[0xF0, 0x01, 0x68]`.
+#[test]
+fn test_uc8253_se0352n14_init_sequence() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+        .with_variant(Uc8253Variant::Se0352n14);
+    let mut delay = DummyDelay;
+
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x04), // POWER_ON
+            SpiRecord::Command(0x50), // CDI - 0x87, NOT the GDEY037T03 profile's 0x97
+            SpiRecord::Data(vec![0x87]),
+            SpiRecord::Command(0x00), // PANEL_SETTING
+            SpiRecord::Data(vec![0x03, 0x0D]),
+            SpiRecord::Command(0x61), // RESOLUTION - 240 x 0x0168 (360)
+            SpiRecord::Data(vec![0xF0, 0x01, 0x68]),
+            SpiRecord::Command(0x06), // BOOSTER_SOFT_START
+            SpiRecord::Data(vec![0x2F, 0x2F, 0x2E]),
+        ]
+    );
+}
+
+/// The two variants put the Black/White plane on opposite RAM commands. Crossing them routes
+/// black pixels into the red plane, so both directions are asserted together.
+#[test]
+fn test_uc8253_se0352n14_plane_routing() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+        .with_variant(Uc8253Variant::Se0352n14);
+
+    controller
+        .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xAA, 0xBB])
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x10), // WRITE_OLD_DATA carries Black/White here
+            SpiRecord::Data(vec![0xAA, 0xBB]),
+        ]
+    );
+
+    bus_backend.records.borrow_mut().clear();
+    controller
+        .write_frame(&mut bus, ColorChannel::RedYellow, &[0xCC])
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x13), // WRITE_NEW_DATA carries Red here
+            SpiRecord::Data(vec![0xCC]),
+        ]
+    );
+
+    // write_frame_pattern must route identically to write_frame.
+    bus_backend.records.borrow_mut().clear();
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0x00, 2)
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x00, 0x00])]
+    );
+
+    // The default variant is untouched: Black/White stays on WRITE_NEW_DATA.
+    bus_backend.records.borrow_mut().clear();
+    let mut default_variant = Uc8253Controller::new(GDEY037T03::WIDTH, GDEY037T03::HEIGHT);
+    assert_eq!(default_variant.variant(), Uc8253Variant::Gdey037t03);
+    default_variant
+        .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xAA])
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![SpiRecord::Command(0x13), SpiRecord::Data(vec![0xAA])]
+    );
+}
+
+/// Refresh on this panel is a bare `DISPLAY_REFRESH`. Re-issuing `CDI` would move the DDX
+/// polarity bits away from the `0x87` set at init and invert black and white, and the panel is
+/// already powered from `init_sequence` — so neither may leak in, not even under a fast mode,
+/// which this panel does not support at all.
+#[test]
+fn test_uc8253_se0352n14_trigger_refresh_ignores_refresh_mode() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = DummyDelay;
+
+    for mode in [
+        Uc8253RefreshMode::Full,
+        Uc8253RefreshMode::FastFull,
+        Uc8253RefreshMode::Partial,
+        Uc8253RefreshMode::FastPartial,
+    ] {
+        bus_backend.records.borrow_mut().clear();
+        let mut controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+            .with_variant(Uc8253Variant::Se0352n14)
+            .with_refresh_mode(mode);
+        controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+
+        assert_eq!(
+            bus_backend.records.borrow().clone(),
+            vec![
+                SpiRecord::Command(0x04), // POWER_ON — the charge pump drops after each update
+                SpiRecord::Command(0x12), // DISPLAY_REFRESH
+            ],
+            "refresh mode {mode:?} leaked commands into the SE0352N14 refresh"
+        );
+    }
+}
+
+#[test]
+fn test_uc8253_se0352n14_driver_smoke() {
+    let spi = MockSpi;
+    let dc = MockOutputPin;
+    let rst = MockOutputPin;
+    let busy = MockInputPin { is_high: true }; // Active-low BUSY: high means idle
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(spi, dc, rst, busy);
+    let controller = Uc8253Controller::new(SE0352N14TNGA0::WIDTH, SE0352N14TNGA0::HEIGHT)
+        .with_variant(Uc8253Variant::Se0352n14);
+    let mut driver = EpdBuilder::<_, SE0352N14TNGA0>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 240);
+    assert_eq!(driver.height(), 360);
+
+    driver.init(&mut delay).expect("SE0352N14 init failed");
+    // 0x00 is white in BOTH planes on this panel, unlike the monochrome GDEY037T03's 0xFF.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0x00)
+        .expect("SE0352N14 black/white clear failed");
+    driver
+        .clear_frame(ColorChannel::RedYellow, 0x00)
+        .expect("SE0352N14 red clear failed");
+    driver
+        .refresh(&mut delay)
+        .expect("SE0352N14 refresh failed");
+    driver.sleep(&mut delay).expect("SE0352N14 sleep failed");
+}
+
+/// A fixed settling delay after `DISPLAY_REFRESH` is not enough: BUSY assertion latency varies,
+/// and a 10 ms guard was observed holding on some refreshes and missing on others on the same
+/// XIAO ESP32-C3. Missing it leaves the panel a frame behind, because the caller writes into RAM
+/// while the update is still running. `wait_busy_assert` waits for the edge instead of guessing.
+#[test]
+fn test_wait_busy_assert_waits_for_a_late_assertion() {
+    /// BUSY that reads idle until `assert_after` polls have happened, then reads busy.
+    ///
+    /// Active-LOW, so "idle" is HIGH. Modelled on the real failure: the panel had not pulled BUSY
+    /// down yet when the driver first looked.
+    struct LateBusy {
+        polls: RefCell<u32>,
+        assert_after: u32,
+    }
+
+    impl DigitalErrorType for &LateBusy {
+        type Error = core::convert::Infallible;
+    }
+
+    impl InputPin for &LateBusy {
+        fn is_high(&mut self) -> Result<bool, Self::Error> {
+            let mut polls = self.polls.borrow_mut();
+            let now = *polls;
+            *polls += 1;
+            Ok(now < self.assert_after)
+        }
+        fn is_low(&mut self) -> Result<bool, Self::Error> {
+            Ok(*self.polls.borrow() >= self.assert_after)
+        }
+    }
+
+    struct CountingDelay(u32);
+    impl DelayNs for CountingDelay {
+        fn delay_ns(&mut self, _ns: u32) {}
+        fn delay_ms(&mut self, ms: u32) {
+            self.0 += ms;
+        }
+    }
+
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+
+    // Asserts only on the 26th poll — past any 10 ms fixed guard.
+    let busy = LateBusy {
+        polls: RefCell::new(0),
+        assert_after: 25,
+    };
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, &busy);
+    let mut delay = CountingDelay(0);
+
+    let asserted = bus.wait_busy_assert(&mut delay, false, 500).unwrap();
+    assert!(asserted, "gave up before BUSY asserted");
+    assert!(
+        delay.0 >= 25,
+        "returned after {} ms, before the panel asserted at 25 ms",
+        delay.0
+    );
+}
+
+/// A panel that never asserts must not hang the caller, so the wait is bounded and reports the
+/// timeout rather than erroring — a missing panel still reads idle and falls straight through.
+#[test]
+fn test_wait_busy_assert_times_out_on_a_silent_panel() {
+    struct CountingDelay(u32);
+    impl DelayNs for CountingDelay {
+        fn delay_ns(&mut self, _ns: u32) {}
+        fn delay_ms(&mut self, ms: u32) {
+            self.0 += ms;
+        }
+    }
+
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    // MockInputPin reads HIGH: idle forever, for an active-LOW panel.
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, MockInputPin { is_high: true });
+    let mut delay = CountingDelay(0);
+
+    let asserted = bus.wait_busy_assert(&mut delay, false, 50).unwrap();
+    assert!(!asserted, "claimed BUSY asserted on a silent panel");
+    assert_eq!(delay.0, 50, "did not honour the timeout");
+}
+
 /// A fast update must restore the panel setting with a settling gap between the soft reset
 /// (`0x1E`, RST_N low) and its release (`0x1F`). Issuing them back-to-back lets the reset's
 /// power-on defaults win, which flips the scan direction and rotates every later frame.

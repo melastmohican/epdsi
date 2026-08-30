@@ -9,6 +9,7 @@ pub mod gdem0213b74;
 pub mod gdep073e01;
 pub mod gdeq0426t82;
 pub mod gdey037t03;
+pub mod se0352n14tnga0;
 pub mod zjy122250;
 
 pub use e2154qs0f1::{E2154QS0F1, EPD_154_QS_0F};
@@ -20,4 +21,5 @@ pub use gdem0213b74::{GxEPD2_213_B74, GDEM0213B74};
 pub use gdep073e01::{GxEPD2_730c_GDEP073E01, GDEP073E01};
 pub use gdeq0426t82::GDEQ0426T82;
 pub use gdey037t03::{GxEPD2_370_GDEY037T03, GDEY037T03};
+pub use se0352n14tnga0::SE0352N14TNGA0;
 pub use zjy122250::{GDEY0213F51, ZJY122250_0213AJH_E5};

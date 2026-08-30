@@ -36,6 +36,8 @@ The crate cleanly separates three concerns via traits, so a new display is norma
 
 Adding a new panel to an existing controller IC only requires a new file in `src/panels/` implementing `EpdPanel`. Adding a new driver IC requires a new file in `src/controllers/` implementing `EpdController<BUS>` for the generic `SpiBusWrapper<SPI, DC, RST, BUSY>`.
 
+The exception is a panel that shares an IC but not its register profile, which also needs a variant on the controller — `Ssd168xVariant`, `PervasiveDriverVariant`, `PervasiveBwryVariant`, and `Uc8253Variant` (`Gdey037t03` vs `Se0352n14`, differing in init sequence, RAM plane order, ink polarity and refresh). Since `EpdController` never sees the `PANEL` type, a mismatched variant cannot be caught at compile time: it renders inverted or blank rather than erroring, so both the panel's module doc and the variant's doc must name the pairing.
+
 ### Testing patterns
 
 - `tests/ssd1680_tests.rs`, `tests/ssd1681_tests.rs`, `tests/ssd1677_tests.rs`, `tests/uc8253_tests.rs`, `tests/ed2208_tests.rs`, `tests/pervasive_tests.rs`, `tests/pervasive_bwry_tests.rs`, `tests/compile_tests.rs` use a hand-rolled `RecordingSpiBus` (wrapping `RefCell<Vec<SpiRecord>>`, `SpiRecord::{Command, Data}`) that records DC-pin state to distinguish command bytes from data bytes, so tests can assert exact SPI byte sequences sent to the panel. `embedded-hal-mock` is also available as a dev-dependency for pin/delay mocking.
