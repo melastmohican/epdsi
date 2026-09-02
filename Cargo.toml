@@ -48,3 +48,9 @@ opt-level = 1
 opt-level = 3
 lto = true
 
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

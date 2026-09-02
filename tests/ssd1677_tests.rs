@@ -1,3 +1,7 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
+//! targets library code only.
+
 use core::cell::RefCell;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};

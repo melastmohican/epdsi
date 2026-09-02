@@ -1,3 +1,7 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
+//! targets library code only.
+
 //! Regression tests for [`PageBuffer`] row addressing.
 //!
 //! Panels whose visible width is not a multiple of 8 (the 122 px GDEM0213B74 and

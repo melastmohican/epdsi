@@ -1,3 +1,7 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
+//! targets library code only.
+
 //! Unit and mock bus parity tests for SSD1681 E-Paper Display Controller.
 
 use core::cell::RefCell;
