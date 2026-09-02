@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fast path is taken only where the result is provably uniform: a `0x00` or `0xFF` fill, covering
   a whole plane, on a panel inside 960 × 680. `0xF7` and `0x77` are consequently the only two
   bytes ever sent. Everything else streams exactly as before, including partial fills and
-  non-uniform bytes. BUSY is waited on, since the sweep runs in hardware and leaves the RAM
-  address counter where it finished.
+  non-uniform bytes. BUSY is waited on, since the sweep runs in hardware, and the RAM address
+  counter is re-seated to the window origin afterwards — streaming a plane left it wrapped back
+  there on its own, so without that a caller writing image data straight after a clear would
+  render it displaced rather than faster.
 
   **No vendor reference driver uses these registers on this panel.** Neither
   `GxEPD2_426_GDEQ0426T82` nor Good Display's own `GDEY0426T82` sample does, and

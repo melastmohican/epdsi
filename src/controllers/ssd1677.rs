@@ -88,6 +88,9 @@ pub struct Ssd1677Controller {
     gate_voltage: Option<u8>,
     custom_lut: Option<&'static [u8]>,
     ram_auto_fill: bool,
+    /// Visible-space origin of the last window set, so the RAM address counter can be restored
+    /// after a hardware fill sweep leaves it wherever it finished.
+    window_origin: (u32, u32),
 }
 
 impl Ssd1677Controller {
@@ -101,6 +104,7 @@ impl Ssd1677Controller {
             gate_voltage: None,
             custom_lut: None,
             ram_auto_fill: true,
+            window_origin: (0, 0),
         }
     }
 
@@ -356,6 +360,8 @@ where
         let yy = self.height - y_start - h;
         let yy_end = self.height - y_start - 1;
 
+        self.window_origin = (x_start, y_start);
+
         // Re-assert Y-decrement data entry alongside every window change, matching GxEPD2.
         bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x01])?;
         bus.send_command_with_data(
@@ -432,7 +438,15 @@ where
             bus.send_command_with_data(auto_cmd, &[pattern])?;
             // The datasheet is explicit that BUSY is driven high for the duration; returning
             // before it clears would let the next command land mid-sweep.
-            return bus.wait_busy(true);
+            bus.wait_busy(true)?;
+
+            // Streaming a plane leaves the address counter wrapped back to the window origin, so
+            // callers have always been able to write image data straight afterwards without
+            // re-seating the cursor. A hardware sweep gives no such guarantee about where the
+            // counter stops, so put it back — otherwise swapping in this path would render the
+            // next frame displaced rather than faster.
+            let (x, y) = self.window_origin;
+            return self.set_cursor(bus, x, y);
         }
 
         let cmd = if is_bw {

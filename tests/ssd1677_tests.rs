@@ -436,16 +436,54 @@ fn test_ssd1677_clear_frame_uses_the_auto_fill_registers() {
     // 0xF7: A[7]=1 first step value, A[6:4]=111 step height 680 gates, A[2:0]=111 step width
     // 960 sources. Both steps span the 800 x 480 panel, so the pattern never alternates inside
     // it and the plane comes out uniform. 0x77 is the same with a zero first step.
-    // Replaces 48,000 streamed bytes per plane with two.
+    //
+    // Each sweep is followed by a cursor re-seat to the window origin. Streaming a plane left
+    // the counter wrapped back there on its own, so without this a caller that wrote image data
+    // straight after a clear — as the hardware examples do — would render it displaced.
+    // 6 bytes per plane in place of 48,000.
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
             SpiRecord::Command(0x47), // AUTO_WRITE_BW_RAM
             SpiRecord::Data(vec![0xF7]),
+            SpiRecord::Command(0x4E), // SET_RAMXCNT, back to the window origin
+            SpiRecord::Data(vec![0x00, 0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT: y=0 maps to RAM 479 (0x01DF), Y reversed
+            SpiRecord::Data(vec![0xDF, 0x01]),
             SpiRecord::Command(0x46), // AUTO_WRITE_RED_RAM
             SpiRecord::Data(vec![0x77]),
+            SpiRecord::Command(0x4E),
+            SpiRecord::Data(vec![0x00, 0x00]),
+            SpiRecord::Command(0x4F),
+            SpiRecord::Data(vec![0xDF, 0x01]),
         ]
     );
+}
+
+#[test]
+fn test_ssd1677_auto_fill_restores_the_cursor_to_a_narrowed_window() {
+    // The re-seat must follow the window actually in force, not assume the full frame.
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+
+    controller.set_window(&mut bus, 100, 50, 199, 99).unwrap();
+    bus_backend.records.borrow_mut().clear();
+
+    // A full-plane count still auto-fills; the sweep paints the RAM area, which is the window.
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0xFF, 100 * 480)
+        .unwrap();
+
+    let records = bus_backend.records.borrow().clone();
+    assert_eq!(records[0], SpiRecord::Command(0x47));
+    // Same cursor bytes `set_cursor(100, 50)` emits on its own: x rounds to pixel 96 (0x0060),
+    // y=50 maps to RAM 429 (0x01AD).
+    assert_eq!(records[2], SpiRecord::Command(0x4E));
+    assert_eq!(records[3], SpiRecord::Data(vec![0x60, 0x00]));
+    assert_eq!(records[4], SpiRecord::Command(0x4F));
+    assert_eq!(records[5], SpiRecord::Data(vec![0xAD, 0x01]));
 }
 
 #[test]
