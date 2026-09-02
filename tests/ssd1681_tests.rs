@@ -196,10 +196,9 @@ fn test_ssd1681_init_sequence() {
 
 #[test]
 fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
-    // GDEM0154Z90 declares `vcom() == Some(0x26)`, and the panel hooks are unreachable from the
-    // controller, so nothing panel-specific reaches the wire. This asserts the *absence* that
-    // Phase 2 turns into a presence — when `0x2C` starts appearing, this test is the one that
-    // must be updated deliberately.
+    // No panel-declared configuration reaches the wire through `new()`. `for_panel()` is the
+    // opt-in that can add some — and only for a panel that declares it, which GDEM0154Z90
+    // deliberately does not.
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -221,4 +220,116 @@ fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
         !records.contains(&SpiRecord::Command(0x03)),
         "gate voltage register is never written today"
     );
+}
+
+// --- Panel config foundation (plan item 2d) --------------------------------------------------
+
+/// A panel that declares all three register overrides, so the plumbing can be exercised without
+/// shipping a register write no vendor reference backs. No real `epdsi` panel declares any of
+/// these today; `GDEM0154Z90` deliberately does not, because `GxEPD2_154_Z90c` writes no VCOM.
+struct ConfiguredTestPanel;
+
+const TEST_LUT: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD];
+
+impl EpdPanel for ConfiguredTestPanel {
+    const WIDTH: u32 = 200;
+    const HEIGHT: u32 = 200;
+    const COLOR_MODE: ColorMode = ColorMode::TriColor;
+    const VCOM: Option<u8> = Some(0x36);
+    const GATE_VOLTAGE: Option<u8> = Some(0x17);
+    const CUSTOM_LUT: Option<&'static [u8]> = Some(TEST_LUT);
+}
+
+fn record_init(controller: Ssd1681Controller) -> Vec<SpiRecord> {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = controller;
+    let mut delay = DummyDelay;
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    let records = bus_backend.records.borrow().clone();
+    records
+}
+
+#[test]
+fn test_ssd1681_for_panel_is_byte_identical_when_the_panel_declares_nothing() {
+    // The assertion that makes Phase 2 safe to ship without touching hardware: adopting
+    // `for_panel` on any currently-shipping panel changes not one byte on the wire.
+    assert_eq!(
+        record_init(Ssd1681Controller::for_panel::<GDEM0154Z90>()),
+        record_init(Ssd1681Controller::new(
+            GDEM0154Z90::WIDTH,
+            GDEM0154Z90::HEIGHT
+        )),
+    );
+}
+
+#[test]
+fn test_ssd1681_for_panel_reads_dimensions_off_the_panel() {
+    let controller = Ssd1681Controller::for_panel::<GDEM0154Z90>();
+    assert_eq!(controller.vcom(), None);
+    assert_eq!(controller.gate_voltage(), None);
+    assert_eq!(controller.custom_lut(), None);
+
+    // Same gate-height byte as the hand-wired `new(200, 200)` form.
+    let records = record_init(controller);
+    assert_eq!(records[1], SpiRecord::Command(0x01));
+    assert_eq!(records[2], SpiRecord::Data(vec![0xC7, 0x00, 0x00]));
+}
+
+#[test]
+fn test_ssd1681_declared_config_reaches_the_wire_in_reference_order() {
+    let controller = Ssd1681Controller::for_panel::<ConfiguredTestPanel>();
+    assert_eq!(controller.vcom(), Some(0x36));
+    assert_eq!(controller.gate_voltage(), Some(0x17));
+    assert_eq!(controller.custom_lut(), Some(TEST_LUT));
+
+    assert_eq!(
+        record_init(controller),
+        vec![
+            SpiRecord::Command(0x12), // SW_RESET
+            SpiRecord::Command(0x01), // DRIVER_CONTROL
+            SpiRecord::Data(vec![0xC7, 0x00, 0x00]),
+            SpiRecord::Command(0x3C), // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x05]),
+            // VCOM then gate voltage, straight after the border waveform — the order
+            // `GxEPD2_213_B72::_InitDisplay()` uses.
+            SpiRecord::Command(0x2C),
+            SpiRecord::Data(vec![0x36]),
+            SpiRecord::Command(0x03),
+            SpiRecord::Data(vec![0x17]),
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44), // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x18]),
+            SpiRecord::Command(0x45), // SET_RAMYPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0xC7, 0x00]),
+            SpiRecord::Command(0x4E), // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+            // LUT last, after the RAM block — `GxEPD2_213_B72::_Init_Full()` order.
+            SpiRecord::Command(0x32),
+            SpiRecord::Data(vec![0xAA, 0xBB, 0xCC, 0xDD]),
+        ]
+    );
+}
+
+#[test]
+fn test_ssd1681_builders_are_independent() {
+    // Each override is omitted on its own, not all-or-nothing.
+    let records = record_init(
+        Ssd1681Controller::new(200, 200)
+            .with_gate_voltage(Some(0x17))
+            .with_vcom(None),
+    );
+    assert!(!records.contains(&SpiRecord::Command(0x2C)));
+    assert!(!records.contains(&SpiRecord::Command(0x32)));
+    let idx = records
+        .iter()
+        .position(|r| *r == SpiRecord::Command(0x03))
+        .expect("gate voltage was configured, so it must be written");
+    assert_eq!(records[idx + 1], SpiRecord::Data(vec![0x17]));
 }

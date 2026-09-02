@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EpdPanel::VCOM`, `EpdPanel::CUSTOM_LUT` and `EpdPanel::GATE_VOLTAGE` — defaulted associated
+  consts replacing the `vcom()`, `custom_lut()` and `gate_voltage()` methods. The methods were
+  unreachable by construction: panels are zero-sized types held through `PhantomData`, so no
+  instance ever existed to call them on, and no panel-declared register override could reach a
+  controller. The consts can.
+- `Ssd1680Controller::for_panel::<P>()`, `Ssd1681Controller::for_panel::<P>()`,
+  `Ssd168xController::for_panel::<P>(variant)` and `Ssd1677Controller::for_panel::<P>()`, which
+  read a panel's dimensions *and* its register configuration off `EpdPanel`. These collapse the
+  `new(P::WIDTH, P::HEIGHT)` pairing every example repeats.
+- `with_vcom`, `with_gate_voltage` and `with_lut` builders (plus matching getters) on the SSD168x
+  and SSD1677 controllers — the two ICs that actually have `0x2C` / `0x03` / `0x32` registers.
+  Configured values are written during `init_sequence` in the order
+  `GxEPD2_213_B72::_InitDisplay()` uses: VCOM then gate voltage straight after the border
+  waveform, and the LUT last, after the RAM window and cursor, per `_Init_Full()`.
+
+  Deliberately **not** added to UC8253, JD79661, ED2208 or the Pervasive pair. Their
+  configuration has a different shape, and the BWRY panel's comes from OTP at runtime rather than
+  from a panel const.
+
+### Changed
+
+- Adopted a `[lints.clippy]` policy denying `unwrap_used`, `expect_used`, `panic`, `todo` and
+  `unimplemented` in library code. `src/` was already clean, so nothing needed rewriting.
+
+### Removed
+
+- `GDEM0154Z90` no longer declares a VCOM override. It previously carried `vcom() -> Some(0x26)`,
+  which never left the crate because the hook was unreachable — and which is not this panel's
+  value: `GxEPD2_154_Z90c::_InitDisplay()` writes no `0x2C` at all, running on the panel's OTP
+  VCOM. `0x26` is what `GxEPD2_213_B72::_Init_Part()` writes for a different panel on a different
+  IC in partial mode. Promoting it to the new const, now that the const reaches the wire, would
+  have converted a dead placeholder into a live divergence.
+
+  **No byte on any wire changed.** Every panel `epdsi` ships declares no override, so
+  `for_panel::<P>()` produces a byte-identical init to `new(P::WIDTH, P::HEIGHT)` for all of them
+  — asserted in `tests/ssd1680_tests.rs`, `tests/ssd1681_tests.rs` and `tests/ssd1677_tests.rs`.
+
+### Deprecated
+
+- `EpdPanel::vcom()`, `EpdPanel::custom_lut()` and `EpdPanel::gate_voltage()`. Use the
+  `VCOM`, `CUSTOM_LUT` and `GATE_VOLTAGE` consts instead. Scheduled for removal in 0.2.0.
+
+### Fixed
+
+- Documentation: the `wait_busy_with_delay` cap is a 60,000 ms safety timeout, not 1500
+  iterations.
+
 ## [0.1.5] - 2026-08-30
 
 ### Added

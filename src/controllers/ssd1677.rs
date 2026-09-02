@@ -14,12 +14,14 @@ use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
-use crate::traits::{ColorChannel, EpdController};
+use crate::traits::{ColorChannel, EpdController, EpdPanel};
 
 /// SSD1677 Command Definitions
 pub mod cmd {
     /// Driver output control
     pub const DRIVER_CONTROL: u8 = 0x01;
+    /// Gate driving voltage control
+    pub const GATE_VOLTAGE: u8 = 0x03;
     /// Booster soft-start control
     pub const BOOSTER_SOFT_START: u8 = 0x0C;
     /// Deep sleep mode entry
@@ -42,6 +44,10 @@ pub mod cmd {
     pub const WRITE_BW_DATA: u8 = 0x24;
     /// Write Red/Yellow RAM data
     pub const WRITE_RED_DATA: u8 = 0x26;
+    /// Write VCOM register
+    pub const WRITE_VCOM_REGISTER: u8 = 0x2C;
+    /// Write LUT register (custom waveform upload)
+    pub const WRITE_LUT_REGISTER: u8 = 0x32;
     /// Border waveform control
     pub const BORDER_WAVEFORM_CONTROL: u8 = 0x3C;
     /// Set RAM X address start/end position
@@ -74,6 +80,9 @@ pub struct Ssd1677Controller {
     width: u32,
     height: u32,
     refresh_mode: Ssd1677RefreshMode,
+    vcom: Option<u8>,
+    gate_voltage: Option<u8>,
+    custom_lut: Option<&'static [u8]>,
 }
 
 impl Ssd1677Controller {
@@ -83,6 +92,9 @@ impl Ssd1677Controller {
             width,
             height,
             refresh_mode: Ssd1677RefreshMode::default(),
+            vcom: None,
+            gate_voltage: None,
+            custom_lut: None,
         }
     }
 
@@ -100,6 +112,70 @@ impl Ssd1677Controller {
     /// Returns current display refresh mode.
     pub fn refresh_mode(&self) -> Ssd1677RefreshMode {
         self.refresh_mode
+    }
+
+    /// Builds a controller from a panel type, reading its dimensions and register
+    /// configuration off [`EpdPanel`].
+    ///
+    /// A panel declaring no [`VCOM`](EpdPanel::VCOM),
+    /// [`GATE_VOLTAGE`](EpdPanel::GATE_VOLTAGE) or [`CUSTOM_LUT`](EpdPanel::CUSTOM_LUT) —
+    /// which includes [`GDEQ0426T82`](crate::panels::GDEQ0426T82), the only panel this
+    /// controller drives — produces a byte-identical init to [`new`](Self::new).
+    ///
+    /// ```
+    /// use epdsi::prelude::*;
+    ///
+    /// let controller = Ssd1677Controller::for_panel::<GDEQ0426T82>();
+    /// ```
+    pub fn for_panel<P: EpdPanel>() -> Self {
+        Self::new(P::WIDTH, P::HEIGHT)
+            .with_vcom(P::VCOM)
+            .with_gate_voltage(P::GATE_VOLTAGE)
+            .with_lut(P::CUSTOM_LUT)
+    }
+
+    /// Sets the VCOM register (`0x2C`) written during init (builder method).
+    ///
+    /// `None` — the default — omits the write, leaving the panel on its OTP VCOM.
+    ///
+    /// **Do not wire a VCOM to `GDEQ0426T82`.** `GxEPD2_426_GDEQ0426T82.cpp` writes no `0x2C`
+    /// anywhere; the panel runs on OTP. Ruled 1 Sep 2026 — supplying one here would be a new
+    /// divergence, not a fix. The hook exists for a future SSD1677 panel whose vendor
+    /// reference does write it.
+    pub fn with_vcom(mut self, vcom: Option<u8>) -> Self {
+        self.vcom = vcom;
+        self
+    }
+
+    /// Returns the configured VCOM override, if any.
+    pub fn vcom(&self) -> Option<u8> {
+        self.vcom
+    }
+
+    /// Sets the gate driving voltage register (`0x03`) written during init (builder method).
+    ///
+    /// `None` — the default — omits the write, leaving the panel on its OTP gate voltage.
+    pub fn with_gate_voltage(mut self, gate_voltage: Option<u8>) -> Self {
+        self.gate_voltage = gate_voltage;
+        self
+    }
+
+    /// Returns the configured gate voltage override, if any.
+    pub fn gate_voltage(&self) -> Option<u8> {
+        self.gate_voltage
+    }
+
+    /// Sets the custom waveform LUT uploaded to `0x32` at the end of init (builder method).
+    ///
+    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform.
+    pub fn with_lut(mut self, lut: Option<&'static [u8]>) -> Self {
+        self.custom_lut = lut;
+        self
+    }
+
+    /// Returns the configured custom LUT, if any.
+    pub fn custom_lut(&self) -> Option<&'static [u8]> {
+        self.custom_lut
     }
 }
 
@@ -135,10 +211,25 @@ where
         // Border Waveform Control
         bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x01])?;
 
+        // Panel-declared analog overrides, in the order GxEPD2's SSD168x-family drivers write
+        // them. Both absent by default — `GxEPD2_426_GDEQ0426T82` writes neither, so the only
+        // panel this controller drives today emits nothing here.
+        if let Some(vcom) = self.vcom {
+            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])?;
+        }
+        if let Some(gate_voltage) = self.gate_voltage {
+            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])?;
+        }
+
         // Set RAM Area to full display frame. `set_window` also asserts the Increment-X /
         // Decrement-Y data entry mode the reversed gates require.
         self.set_window(bus, 0, 0, self.width - 1, self.height - 1)?;
         self.set_cursor(bus, 0, 0)?;
+
+        // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`.
+        if let Some(lut) = self.custom_lut {
+            bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)?;
+        }
 
         Ok(())
     }

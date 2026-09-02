@@ -14,8 +14,8 @@
 //! - [`EpdPanel`] — a zero-sized type holding static physical facts about one panel:
 //!   [`WIDTH`](EpdPanel::WIDTH), [`HEIGHT`](EpdPanel::HEIGHT),
 //!   [`COLOR_MODE`](EpdPanel::COLOR_MODE), plus optional
-//!   [`vcom`](EpdPanel::vcom), [`custom_lut`](EpdPanel::custom_lut) and
-//!   [`gate_voltage`](EpdPanel::gate_voltage) overrides. See [`panels`].
+//!   [`VCOM`](EpdPanel::VCOM), [`CUSTOM_LUT`](EpdPanel::CUSTOM_LUT) and
+//!   [`GATE_VOLTAGE`](EpdPanel::GATE_VOLTAGE) overrides. See [`panels`].
 //! - [`EpdController`] — the driver IC's command and register logic: init sequence,
 //!   window and cursor addressing, frame writes, refresh, sleep. See [`controllers`].
 //! - [`SpiBusWrapper`] — the physical transport, wrapping an `embedded-hal` `SpiDevice`

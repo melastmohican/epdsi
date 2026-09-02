@@ -102,17 +102,54 @@ pub trait EpdPanel {
     /// Color capability mode of the panel.
     const COLOR_MODE: ColorMode = ColorMode::BlackWhite;
 
+    /// Optional VCOM voltage override, written to the controller's VCOM register
+    /// (`0x2C` on SSD168x-family parts) during initialisation.
+    ///
+    /// `None` leaves the panel on its OTP VCOM, which is what most panels want. Only
+    /// declare a value a vendor reference driver actually writes for *this* panel —
+    /// a VCOM copied from a neighbouring panel's driver is a mis-port, not a default.
+    const VCOM: Option<u8> = None;
+
+    /// Optional custom waveform Look-Up Table, written to the controller's LUT register
+    /// (`0x32` on SSD168x-family parts) during initialisation.
+    ///
+    /// `None` leaves the panel on its OTP waveform.
+    const CUSTOM_LUT: Option<&'static [u8]> = None;
+
+    /// Optional Gate Driving Voltage override (`0x03` on SSD168x-family parts).
+    ///
+    /// `None` leaves the panel on its OTP gate voltage.
+    const GATE_VOLTAGE: Option<u8> = None;
+
     /// Optional VCOM voltage configuration override byte.
+    #[deprecated(
+        since = "0.1.6",
+        note = "use the `VCOM` associated const instead. These `&self` hooks are unreachable: \
+                panels are zero-sized types held through `PhantomData`, so no instance ever \
+                exists to call them on. Removed in 0.2.0."
+    )]
     fn vcom(&self) -> Option<u8> {
         None
     }
 
     /// Optional custom embedded Look-Up Table (LUT) for driving waveforms.
+    #[deprecated(
+        since = "0.1.6",
+        note = "use the `CUSTOM_LUT` associated const instead. These `&self` hooks are \
+                unreachable: panels are zero-sized types held through `PhantomData`, so no \
+                instance ever exists to call them on. Removed in 0.2.0."
+    )]
     fn custom_lut(&self) -> Option<&'static [u8]> {
         None
     }
 
     /// Optional Gate Driving Voltage override parameter.
+    #[deprecated(
+        since = "0.1.6",
+        note = "use the `GATE_VOLTAGE` associated const instead. These `&self` hooks are \
+                unreachable: panels are zero-sized types held through `PhantomData`, so no \
+                instance ever exists to call them on. Removed in 0.2.0."
+    )]
     fn gate_voltage(&self) -> Option<u8> {
         None
     }

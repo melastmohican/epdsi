@@ -412,3 +412,43 @@ fn test_ssd1680_init_writes_no_lut_or_vcom_today() {
         }
     }
 }
+
+// --- Panel config foundation (plan item 2d) --------------------------------------------------
+
+fn record_ssd1680_init(controller: Ssd1680Controller) -> Vec<SpiRecord> {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = controller;
+    let mut delay = DummyDelay;
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    let records = bus_backend.records.borrow().clone();
+    records
+}
+
+#[test]
+fn test_ssd1680_for_panel_is_byte_identical_on_both_panels() {
+    assert_eq!(
+        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEM0213B74>()),
+        record_ssd1680_init(Ssd1680Controller::new(
+            GDEM0213B74::WIDTH,
+            GDEM0213B74::HEIGHT
+        )),
+    );
+    assert_eq!(
+        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEY0266Z90>()),
+        record_ssd1680_init(Ssd1680Controller::new(
+            GDEY0266Z90::WIDTH,
+            GDEY0266Z90::HEIGHT
+        )),
+    );
+}
+
+#[test]
+fn test_ssd1680_for_panel_carries_the_refresh_mode_builder() {
+    // `for_panel` must compose with the builders that already existed, not replace them.
+    let controller = Ssd1680Controller::for_panel::<GDEY0266Z90>()
+        .with_refresh_mode(Ssd1680RefreshMode::FastFull);
+    assert_eq!(controller.refresh_mode(), Ssd1680RefreshMode::FastFull);
+    assert_eq!(controller.vcom(), None);
+}

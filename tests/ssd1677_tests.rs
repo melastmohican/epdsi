@@ -445,3 +445,40 @@ fn test_ssd1677_clear_frame_covers_the_whole_gdeq0426t82_plane() {
     );
     assert!(coalesced[0].1.iter().all(|b| *b == 0xFF));
 }
+
+// --- Panel config foundation (plan item 2d) --------------------------------------------------
+
+#[test]
+fn test_ssd1677_for_panel_is_byte_identical_to_the_hand_wired_form() {
+    let record = |controller: Ssd1677Controller| {
+        let bus_backend = RecordingSpiBus::new();
+        let dc = TestDc(&bus_backend);
+        let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+        let mut controller = controller;
+        let mut delay = DummyDelay;
+        controller.init_sequence(&mut bus, &mut delay).unwrap();
+        let records = bus_backend.records.borrow().clone();
+        records
+    };
+
+    assert_eq!(
+        record(Ssd1677Controller::for_panel::<GDEQ0426T82>()),
+        record(Ssd1677Controller::new(
+            GDEQ0426T82::WIDTH,
+            GDEQ0426T82::HEIGHT
+        )),
+    );
+}
+
+#[test]
+fn test_ssd1677_gdeq0426t82_declares_no_vcom() {
+    // Ruled 1 Sep 2026 against `GxEPD2_426_GDEQ0426T82.cpp`, which writes no 0x2C anywhere: this
+    // panel runs on its OTP VCOM. The const staying `None` is what keeps `for_panel` from
+    // introducing a divergence the hand-wired form never had.
+    assert_eq!(GDEQ0426T82::VCOM, None);
+    assert_eq!(GDEQ0426T82::GATE_VOLTAGE, None);
+    assert_eq!(GDEQ0426T82::CUSTOM_LUT, None);
+
+    let controller = Ssd1677Controller::for_panel::<GDEQ0426T82>();
+    assert_eq!(controller.vcom(), None);
+}
