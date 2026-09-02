@@ -50,6 +50,10 @@ pub mod cmd {
     pub const WRITE_LUT_REGISTER: u8 = 0x32;
     /// Border waveform control
     pub const BORDER_WAVEFORM_CONTROL: u8 = 0x3C;
+    /// Auto write RED RAM for a regular pattern
+    pub const AUTO_WRITE_RED_RAM: u8 = 0x46;
+    /// Auto write Black/White RAM for a regular pattern
+    pub const AUTO_WRITE_BW_RAM: u8 = 0x47;
     /// Set RAM X address start/end position
     pub const SET_RAMXPOS: u8 = 0x44;
     /// Set RAM Y address start/end position
@@ -83,6 +87,7 @@ pub struct Ssd1677Controller {
     vcom: Option<u8>,
     gate_voltage: Option<u8>,
     custom_lut: Option<&'static [u8]>,
+    ram_auto_fill: bool,
 }
 
 impl Ssd1677Controller {
@@ -95,6 +100,7 @@ impl Ssd1677Controller {
             vcom: None,
             gate_voltage: None,
             custom_lut: None,
+            ram_auto_fill: true,
         }
     }
 
@@ -176,6 +182,102 @@ impl Ssd1677Controller {
     /// Returns the configured custom LUT, if any.
     pub fn custom_lut(&self) -> Option<&'static [u8]> {
         self.custom_lut
+    }
+
+    /// Enables or disables the RAM auto-fill fast path for uniform frame fills (builder method).
+    ///
+    /// Enabled by default. Where it applies, a full-plane clear costs one command and one data
+    /// byte instead of streaming every RAM byte — two bytes in place of 48,000 on an 800 × 480
+    /// [`GDEQ0426T82`](crate::panels::GDEQ0426T82), per plane.
+    ///
+    /// # When the fast path is taken
+    ///
+    /// `0x46` / `0x47` drive a *regular pattern* generator, not a memset, so `epdsi` uses it only
+    /// where the pattern is provably uniform. All four conditions must hold, and the byte stream
+    /// is used whenever one does not:
+    ///
+    /// 1. the fill byte is `0x00` or `0xFF` — `A[7]` sets one step's value, so nothing else is
+    ///    expressible;
+    /// 2. the byte count covers a whole colour plane — the generator paints the RAM area
+    ///    regardless of any count, so a partial fill would overwrite more than was asked;
+    /// 3. the panel is no wider than 960 sources and no taller than 680 gates, the largest steps
+    ///    `A[2:0]` and `A[6:4]` encode — beyond that the pattern alternates part-way across;
+    /// 4. this flag is set.
+    ///
+    /// # Why it is worth knowing about
+    ///
+    /// **No vendor reference driver uses these registers on this panel.** Neither
+    /// `GxEPD2_426_GDEQ0426T82` nor Good Display's own `GDEY0426T82` sample streams anything but
+    /// bytes, and `GxEPD2_370_TC1` carries both commands commented out and marked
+    /// "DON'T USE WITH GxEPD2" — a note about GxEPD2's own buffer bookkeeping, which a full-RAM
+    /// sweep desynchronises, rather than a defect in the controller. `epdsi` tracks no such
+    /// shadow buffer, so the objection does not carry over; the semantics implemented here come
+    /// from the SSD1677 datasheet (Rev 1.0, Nov 2018) directly.
+    ///
+    /// That leaves this the one part of the driver with no reference implementation behind it.
+    /// If a cleared panel ever comes up banded or half-inverted, switching this off restores the
+    /// byte-for-byte 0.1.6 behaviour and is the first thing to try.
+    ///
+    /// # Ordering
+    ///
+    /// The sweep runs in hardware and holds BUSY high while it does; `write_frame_pattern` waits
+    /// for it to clear before returning. It also leaves the RAM address counter where the sweep
+    /// finished, so set the cursor before writing image data afterwards — as `render_paged`
+    /// already does for every page.
+    pub fn with_ram_auto_fill(mut self, enabled: bool) -> Self {
+        self.ram_auto_fill = enabled;
+        self
+    }
+
+    /// Returns whether the RAM auto-fill fast path is enabled.
+    pub fn ram_auto_fill(&self) -> bool {
+        self.ram_auto_fill
+    }
+
+    /// Number of RAM bytes one full colour plane occupies.
+    fn plane_bytes(&self) -> usize {
+        self.width.div_ceil(8) as usize * self.height as usize
+    }
+
+    /// Encodes the `0x46` / `0x47` parameter byte for a uniform fill, or `None` when the
+    /// hardware pattern generator cannot express this fill and the caller must stream instead.
+    ///
+    /// The register paints a *regular alternating pattern*, not an arbitrary fill: `A[7]` is the
+    /// first step's value, `A[6:4]` the step height in gates and `A[2:0]` the step width in
+    /// sources. It reproduces a uniform frame only when both step sizes span the whole panel, so
+    /// the value never alternates inside it. That bounds this path to panels no larger than the
+    /// maximum steps — 960 sources by 680 gates — and to fills of all-ones or all-zeroes.
+    fn auto_fill_pattern(&self, byte: u8, count: usize) -> Option<u8> {
+        if !self.ram_auto_fill {
+            return None;
+        }
+
+        // A[7]: the first step value. Only a solid 0x00 or 0xFF frame is a "pattern" with no
+        // alternation; anything else has to be streamed.
+        let first_step = match byte {
+            0x00 => 0x00,
+            0xFF => 0x80,
+            _ => return None,
+        };
+
+        // The generator fills the whole RAM area, ignoring any byte count. Partial fills, and
+        // callers that narrowed the window first, must keep the streaming path.
+        if count != self.plane_bytes() {
+            return None;
+        }
+
+        // Largest steps the register encodes: A[6:4] = 111 is 680 gates, A[2:0] = 111 is 960
+        // sources. A panel exceeding either would alternate part-way across and clear to a
+        // half-inverted frame rather than failing.
+        const MAX_STEP_HEIGHT: u32 = 680;
+        const MAX_STEP_WIDTH: u32 = 960;
+        if self.height > MAX_STEP_HEIGHT || self.width > MAX_STEP_WIDTH {
+            return None;
+        }
+
+        // 0xF7 for a white frame, 0x77 for a black one — 0xF7 being the byte Good Display's
+        // SSD1677-family sample code uses.
+        Some(first_step | (0b111 << 4) | 0b111)
     }
 }
 
@@ -318,12 +420,25 @@ where
         byte: u8,
         count: usize,
     ) -> Result<(), Self::Error> {
-        let cmd = match channel {
-            ColorChannel::BlackWhite => cmd::WRITE_BW_DATA,
-            ColorChannel::RedYellow
-            | ColorChannel::Red
-            | ColorChannel::Yellow
-            | ColorChannel::Color7(_) => cmd::WRITE_RED_DATA,
+        let is_bw = matches!(channel, ColorChannel::BlackWhite);
+
+        // Fast path: let the controller paint the plane itself.
+        if let Some(pattern) = self.auto_fill_pattern(byte, count) {
+            let auto_cmd = if is_bw {
+                cmd::AUTO_WRITE_BW_RAM
+            } else {
+                cmd::AUTO_WRITE_RED_RAM
+            };
+            bus.send_command_with_data(auto_cmd, &[pattern])?;
+            // The datasheet is explicit that BUSY is driven high for the duration; returning
+            // before it clears would let the next command land mid-sweep.
+            return bus.wait_busy(true);
+        }
+
+        let cmd = if is_bw {
+            cmd::WRITE_BW_DATA
+        } else {
+            cmd::WRITE_RED_DATA
         };
         bus.send_command(cmd)?;
         bus.send_data_repeated(byte, count)

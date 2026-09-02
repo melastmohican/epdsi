@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `Ssd1677Controller` clears a colour plane with the controller's own RAM pattern generator
+  (`0x46` / `0x47`) instead of streaming every byte. A full-plane clear on an 800 × 480
+  `GDEQ0426T82` now costs one command and one data byte rather than 48,000 streamed bytes.
+
+  These registers drive a *regular pattern*, not a memset — `A[7]` is one step's value, `A[6:4]`
+  the step height in gates (max 680) and `A[2:0]` the step width in sources (max 960) — so the
+  fast path is taken only where the result is provably uniform: a `0x00` or `0xFF` fill, covering
+  a whole plane, on a panel inside 960 × 680. `0xF7` and `0x77` are consequently the only two
+  bytes ever sent. Everything else streams exactly as before, including partial fills and
+  non-uniform bytes. BUSY is waited on, since the sweep runs in hardware and leaves the RAM
+  address counter where it finished.
+
+  **No vendor reference driver uses these registers on this panel.** Neither
+  `GxEPD2_426_GDEQ0426T82` nor Good Display's own `GDEY0426T82` sample does, and
+  `GxEPD2_370_TC1` carries both commented out and marked "DON'T USE WITH GxEPD2" — a note about
+  GxEPD2's shadow-buffer bookkeeping, which a full-RAM sweep desynchronises, rather than a defect
+  in the controller. `epdsi` keeps no such buffer. The semantics here come from the SSD1677
+  datasheet (Rev 1.0, Nov 2018) directly, which makes this the one part of the driver with no
+  reference implementation behind it. If a cleared panel comes up banded or half-inverted,
+  `with_ram_auto_fill(false)` restores 0.1.6 behaviour byte for byte and is the first thing to
+  try.
+
+### Added
+
+- `Ssd1677Controller::with_ram_auto_fill` and `ram_auto_fill`, controlling the above. Enabled by
+  default.
+
 ## [0.1.6] - 2026-09-01
 
 ### Added

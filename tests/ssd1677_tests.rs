@@ -328,13 +328,13 @@ fn test_ssd1677_sleep() {
     );
 }
 
-// --- Characterisation of the clear path (plan item 1a) -------------------------------------
+// --- The clear path: streaming and auto-fill -------------------------------------------------
 //
-// `write_frame_pattern` is what `clear_frame` funnels into, and until now nothing asserted the
-// bytes it puts on the wire. These tests pin today's behaviour — a plain `send_data_repeated`
-// stream — so that swapping in the SSD1677's RAM auto-fill registers (`0x46`/`0x47`) is a
-// visible, deliberate diff rather than a silent one. A botched auto-fill renders as a
-// partly-cleared panel, not an error, so this is the only automated guard on that change.
+// `write_frame_pattern` is what `clear_frame` funnels into. Since 0.1.7 it has two paths: the
+// controller's own RAM pattern generator (`0x46`/`0x47`) for a uniform full-plane fill, and the
+// original `send_data_repeated` stream for everything the generator cannot express. A botched
+// auto-fill renders as a partly-cleared panel rather than an error, so the boundary between the
+// two paths is asserted here rather than left to hardware to discover.
 
 /// Flattens the recorded stream into `(command, payload)` pairs, concatenating the 64-byte
 /// chunks `send_data_repeated` emits so a 48,000-byte clear is assertable.
@@ -423,7 +423,7 @@ fn test_ssd1677_write_frame_pattern_zero_count_still_selects_the_plane() {
 }
 
 #[test]
-fn test_ssd1677_clear_frame_covers_the_whole_gdeq0426t82_plane() {
+fn test_ssd1677_clear_frame_uses_the_auto_fill_registers() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -431,19 +431,91 @@ fn test_ssd1677_clear_frame_covers_the_whole_gdeq0426t82_plane() {
     let mut driver = EpdBuilder::<_, GDEQ0426T82>::new(controller).build(bus);
 
     driver.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
+    driver.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
 
-    // 800 px / 8 = 100 bytes per row, × 480 rows.
-    const PLANE_BYTES: usize = 100 * 480;
-    let coalesced = coalesce(&bus_backend.records.borrow());
-    assert_eq!(coalesced.len(), 1);
-    assert_eq!(coalesced[0].0, 0x24);
+    // 0xF7: A[7]=1 first step value, A[6:4]=111 step height 680 gates, A[2:0]=111 step width
+    // 960 sources. Both steps span the 800 x 480 panel, so the pattern never alternates inside
+    // it and the plane comes out uniform. 0x77 is the same with a zero first step.
+    // Replaces 48,000 streamed bytes per plane with two.
     assert_eq!(
-        coalesced[0].1.len(),
-        PLANE_BYTES,
-        "a full clear streams every RAM byte one by one today; the auto-fill change replaces \
-         this with 0x46/0x47 and one byte"
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x47), // AUTO_WRITE_BW_RAM
+            SpiRecord::Data(vec![0xF7]),
+            SpiRecord::Command(0x46), // AUTO_WRITE_RED_RAM
+            SpiRecord::Data(vec![0x77]),
+        ]
     );
-    assert!(coalesced[0].1.iter().all(|b| *b == 0xFF));
+}
+
+#[test]
+fn test_ssd1677_auto_fill_falls_back_for_fills_it_cannot_express() {
+    let full = 100 * 480;
+    let cases: [(u8, usize, &str); 3] = [
+        (0xAA, full, "a non-uniform byte is not a regular pattern"),
+        (0xFF, full - 1, "a partial fill would paint the whole plane"),
+        (0x00, 64, "a partial fill would paint the whole plane"),
+    ];
+
+    for (byte, count, why) in cases {
+        let bus_backend = RecordingSpiBus::new();
+        let dc = TestDc(&bus_backend);
+        let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+        let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+
+        controller
+            .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, byte, count)
+            .unwrap();
+
+        let coalesced = coalesce(&bus_backend.records.borrow());
+        assert_eq!(coalesced.len(), 1);
+        assert_eq!(coalesced[0].0, 0x24, "{why}: must stream, not auto-fill");
+        assert_eq!(coalesced[0].1, vec![byte; count], "{why}");
+    }
+}
+
+#[test]
+fn test_ssd1677_auto_fill_declines_panels_larger_than_the_maximum_step() {
+    // A[2:0] tops out at 960 sources and A[6:4] at 680 gates. A panel past either would
+    // alternate part-way across and clear to a half-inverted frame rather than failing, so the
+    // controller must decline instead. No such SSD1677 panel ships today; this pins the guard
+    // before one does.
+    for (width, height) in [(1024u32, 480u32), (800, 720)] {
+        let bus_backend = RecordingSpiBus::new();
+        let dc = TestDc(&bus_backend);
+        let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+        let mut controller = Ssd1677Controller::new(width, height);
+        let count = width.div_ceil(8) as usize * height as usize;
+
+        controller
+            .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0xFF, count)
+            .unwrap();
+
+        let records = bus_backend.records.borrow().clone();
+        assert_eq!(
+            records[0],
+            SpiRecord::Command(0x24),
+            "{width}x{height} exceeds the pattern generator's reach and must stream"
+        );
+    }
+}
+
+#[test]
+fn test_ssd1677_auto_fill_can_be_switched_off() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller =
+        Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT).with_ram_auto_fill(false);
+    assert!(!controller.ram_auto_fill());
+
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0xFF, 100 * 480)
+        .unwrap();
+
+    let coalesced = coalesce(&bus_backend.records.borrow());
+    assert_eq!(coalesced[0].0, 0x24);
+    assert_eq!(coalesced[0].1.len(), 100 * 480);
 }
 
 // --- Panel config foundation (plan item 2d) --------------------------------------------------
