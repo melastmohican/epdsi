@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "epdsi"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "defmt 0.3.100",
  "embedded-graphics",
