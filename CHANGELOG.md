@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`0x46` / `0x47`) instead of streaming every byte. A full-plane clear on an 800 × 480
   `GDEQ0426T82` now costs one command and one data byte rather than 48,000 streamed bytes.
 
+  Measured on an RP2350 at a 16 MHz SPI clock: **4 658 µs against 34 469 µs**, a 7.4× saving of
+  about 29.8 ms per plane clear. The remaining 4.7 ms is the controller's own internal sweep;
+  what disappears is the 24 ms of SPI line time plus the overhead of 750 chunked writes.
+  Verified on hardware against both paths on RP2350 and RP2040 — a cleared plane renders
+  identically either way.
+
   These registers drive a *regular pattern*, not a memset — `A[7]` is one step's value, `A[6:4]`
   the step height in gates (max 680) and `A[2:0]` the step width in sources (max 960) — so the
   fast path is taken only where the result is provably uniform: a `0x00` or `0xFF` fill, covering
