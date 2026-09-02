@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-01
+
 ### Added
 
 - `EpdPanel::VCOM`, `EpdPanel::CUSTOM_LUT` and `EpdPanel::GATE_VOLTAGE` — defaulted associated
@@ -290,7 +292,9 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/melastmohican/epdsi/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/melastmohican/epdsi/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/melastmohican/epdsi/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/melastmohican/epdsi/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/melastmohican/epdsi/compare/v0.1.1...v0.1.2
