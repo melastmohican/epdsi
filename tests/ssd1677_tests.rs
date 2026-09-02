@@ -327,3 +327,121 @@ fn test_ssd1677_sleep() {
         vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x01])]
     );
 }
+
+// --- Characterisation of the clear path (plan item 1a) -------------------------------------
+//
+// `write_frame_pattern` is what `clear_frame` funnels into, and until now nothing asserted the
+// bytes it puts on the wire. These tests pin today's behaviour — a plain `send_data_repeated`
+// stream — so that swapping in the SSD1677's RAM auto-fill registers (`0x46`/`0x47`) is a
+// visible, deliberate diff rather than a silent one. A botched auto-fill renders as a
+// partly-cleared panel, not an error, so this is the only automated guard on that change.
+
+/// Flattens the recorded stream into `(command, payload)` pairs, concatenating the 64-byte
+/// chunks `send_data_repeated` emits so a 48,000-byte clear is assertable.
+fn coalesce(records: &[SpiRecord]) -> Vec<(u8, Vec<u8>)> {
+    let mut out: Vec<(u8, Vec<u8>)> = Vec::new();
+    for record in records {
+        match record {
+            SpiRecord::Command(c) => out.push((*c, Vec::new())),
+            SpiRecord::Data(d) => match out.last_mut() {
+                Some((_, payload)) => payload.extend_from_slice(d),
+                None => panic!("data {:?} arrived before any command", d),
+            },
+        }
+    }
+    out
+}
+
+#[test]
+fn test_ssd1677_write_frame_pattern_streams_the_fill_byte() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+
+    // 150 is deliberately not a multiple of the 64-byte chunk, so a short final chunk is covered.
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0xFF, 150)
+        .unwrap();
+
+    let records = bus_backend.records.borrow().clone();
+    // Today: one command plus 3 chunks (64 + 64 + 22).
+    assert_eq!(
+        records.len(),
+        4,
+        "expected WRITE_BW_DATA plus three streamed chunks, got {:?}",
+        records.iter().map(std::mem::discriminant).collect::<Vec<_>>()
+    );
+    assert_eq!(records[0], SpiRecord::Command(0x24));
+    assert_eq!(records[1], SpiRecord::Data(vec![0xFF; 64]));
+    assert_eq!(records[2], SpiRecord::Data(vec![0xFF; 64]));
+    assert_eq!(records[3], SpiRecord::Data(vec![0xFF; 22]));
+
+    let coalesced = coalesce(&records);
+    assert_eq!(coalesced.len(), 1);
+    assert_eq!(coalesced[0].0, 0x24);
+    assert_eq!(coalesced[0].1, vec![0xFF; 150]);
+}
+
+#[test]
+fn test_ssd1677_write_frame_pattern_channel_routing() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0x00, 4)
+        .unwrap();
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::RedYellow, 0xFF, 4)
+        .unwrap();
+
+    assert_eq!(
+        coalesce(&bus_backend.records.borrow()),
+        vec![(0x24, vec![0x00; 4]), (0x26, vec![0xFF; 4])],
+        "BlackWhite routes to WRITE_BW_DATA, every colour channel to WRITE_RED_DATA"
+    );
+}
+
+#[test]
+fn test_ssd1677_write_frame_pattern_zero_count_still_selects_the_plane() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+
+    controller
+        .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0xFF, 0)
+        .unwrap();
+
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![SpiRecord::Command(0x24)],
+        "a zero-length fill emits the plane-select command and no data"
+    );
+}
+
+#[test]
+fn test_ssd1677_clear_frame_covers_the_whole_gdeq0426t82_plane() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEQ0426T82>::new(controller).build(bus);
+
+    driver.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
+
+    // 800 px / 8 = 100 bytes per row, × 480 rows.
+    const PLANE_BYTES: usize = 100 * 480;
+    let coalesced = coalesce(&bus_backend.records.borrow());
+    assert_eq!(coalesced.len(), 1);
+    assert_eq!(coalesced[0].0, 0x24);
+    assert_eq!(
+        coalesced[0].1.len(),
+        PLANE_BYTES,
+        "a full clear streams every RAM byte one by one today; the auto-fill change replaces \
+         this with 0x46/0x47 and one byte"
+    );
+    assert!(coalesced[0].1.iter().all(|b| *b == 0xFF));
+}

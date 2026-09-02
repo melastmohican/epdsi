@@ -375,3 +375,40 @@ fn test_ssd1680_sleep() {
         vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x01])]
     );
 }
+
+// --- Characterisation of the init path (plan item 1b) ----------------------------------------
+//
+// `test_ssd1680_init_sequence` and `test_ssd1680_gdey0266z90_init_sequence` already pin the
+// stream byte-for-byte. What was missing is the *absence* assertion: no panel-declared
+// configuration reaches the wire today, because the `EpdPanel` hooks are `&self` methods on
+// zero-sized types the controller never holds. The LUT upload turns that absence into a
+// presence for panels that declare a LUT — and must leave it untouched for those that do not.
+
+#[test]
+fn test_ssd1680_init_writes_no_lut_or_vcom_today() {
+    for (width, height) in [
+        (GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT),
+        (GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT),
+    ] {
+        let bus_backend = RecordingSpiBus::new();
+        let dc = TestDc(&bus_backend);
+        let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+        let mut controller = Ssd1680Controller::new(width, height);
+        let mut delay = DummyDelay;
+
+        controller.init_sequence(&mut bus, &mut delay).unwrap();
+
+        let records = bus_backend.records.borrow().clone();
+        for (command, name) in [
+            (0x2Cu8, "VCOM"),
+            (0x32, "LUT"),
+            (0x03, "gate voltage"),
+            (0x04, "source voltage"),
+        ] {
+            assert!(
+                !records.contains(&SpiRecord::Command(command)),
+                "{name} register ({command:#04X}) is never written today ({width}x{height})"
+            );
+        }
+    }
+}

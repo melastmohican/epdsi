@@ -152,3 +152,73 @@ fn test_ssd1681_trigger_refresh_full_and_partial() {
     assert!(records.contains(&SpiRecord::Data(vec![0xFC])));
     assert!(records.contains(&SpiRecord::Command(cmd::MASTER_ACTIVATE)));
 }
+
+// --- Characterisation of the init path (plan item 1b) ----------------------------------------
+//
+// The SSD1681 init stream was previously unasserted. Pinning it byte-for-byte is what makes the
+// coming LUT-upload change provable: a panel declaring no LUT must emit exactly this stream
+// afterwards, with the `0x32` write appearing only for panels that declare one.
+
+#[test]
+fn test_ssd1681_init_sequence() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
+    let mut delay = DummyDelay;
+
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x12), // SW_RESET
+            SpiRecord::Command(0x01), // DRIVER_CONTROL: gate height 199 (0x00C7), scan 0x00
+            SpiRecord::Data(vec![0xC7, 0x00, 0x00]),
+            SpiRecord::Command(0x3C), // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x05]),
+            // No DISPLAY_UPDATE_CTRL1 (0x21) here — that write is SSD1680-only.
+            SpiRecord::Command(0x18), // TEMP_CONTROL: internal sensor
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE: X increment, Y increment
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44), // SET_RAMXPOS: byte-valued, 0..=24 for 200 px
+            SpiRecord::Data(vec![0x00, 0x18]),
+            SpiRecord::Command(0x45), // SET_RAMYPOS: 16-bit start and end, 0..=199
+            SpiRecord::Data(vec![0x00, 0x00, 0xC7, 0x00]),
+            SpiRecord::Command(0x4E), // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+        ]
+    );
+}
+
+#[test]
+fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
+    // GDEM0154Z90 declares `vcom() == Some(0x26)`, and the panel hooks are unreachable from the
+    // controller, so nothing panel-specific reaches the wire. This asserts the *absence* that
+    // Phase 2 turns into a presence — when `0x2C` starts appearing, this test is the one that
+    // must be updated deliberately.
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
+    let mut delay = DummyDelay;
+
+    controller.init_sequence(&mut bus, &mut delay).unwrap();
+
+    let records = bus_backend.records.borrow().clone();
+    assert!(
+        !records.contains(&SpiRecord::Command(0x2C)),
+        "VCOM register is never written today"
+    );
+    assert!(
+        !records.contains(&SpiRecord::Command(0x32)),
+        "LUT register is never written today"
+    );
+    assert!(
+        !records.contains(&SpiRecord::Command(0x03)),
+        "gate voltage register is never written today"
+    );
+}
