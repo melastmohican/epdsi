@@ -1,8 +1,22 @@
 //! JD79661 E-Paper Display Controller implementation.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+// `Wait` has no blocking equivalent, so alias it to `InputPin` under `blocking` — the bound
+// `BUSY: InputPin + Wait` then reads identically in both modes (redundantly `InputPin + InputPin`
+// when aliased, which Rust allows) with no per-identifier macro mapping needed.
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController};
@@ -53,51 +67,60 @@ impl Jd79661Controller {
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Jd79661Controller
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         // Hardware reset sequence
-        bus.hard_reset(delay, 10)?;
+        bus.hard_reset(delay, 10).await?;
 
         // Software reset / init wait (JD79661 busy is active-low: busy when LOW)
-        bus.wait_busy(false)?;
-        bus.send_command_with_data(cmd::POWER_SETTING, &[])?;
-        bus.wait_busy(false)?;
+        bus.wait_busy(false).await?;
+        bus.send_command_with_data(cmd::POWER_SETTING, &[]).await?;
+        bus.wait_busy(false).await?;
 
         // Vendor unlock key
-        bus.send_command_with_data(cmd::MAGIC_KEY, &[0x78])?;
+        bus.send_command_with_data(cmd::MAGIC_KEY, &[0x78]).await?;
 
         // Panel Setting (128x250)
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x8F, 0x29])?;
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x8F, 0x29])
+            .await?;
 
         // Power setting
-        bus.send_command_with_data(cmd::POWER_SETTING, &[0x07, 0x00])?;
+        bus.send_command_with_data(cmd::POWER_SETTING, &[0x07, 0x00])
+            .await?;
 
         // Power offset
-        bus.send_command_with_data(cmd::POWER_OFFSET, &[0x10, 0x54, 0x44])?;
+        bus.send_command_with_data(cmd::POWER_OFFSET, &[0x10, 0x54, 0x44])
+            .await?;
 
         // Booster Soft Start
         bus.send_command_with_data(
             cmd::BOOSTER_SOFT_START,
             &[0x05, 0x00, 0x3F, 0x0A, 0x25, 0x12, 0x1A],
-        )?;
+        )
+        .await?;
 
         // CDI (VCOM and Data Interval Setting)
-        bus.send_command_with_data(cmd::CDI, &[0x37])?;
+        bus.send_command_with_data(cmd::CDI, &[0x37]).await?;
 
         // TCON
-        bus.send_command_with_data(cmd::TCON, &[0x02, 0x02, 0x02])?;
+        bus.send_command_with_data(cmd::TCON, &[0x02, 0x02, 0x02])
+            .await?;
 
         // Resolution setting (Align RAM width to 8-pixel byte boundary, e.g. 128 x 250)
         let ram_width = self.width.div_ceil(8) * 8;
@@ -105,24 +128,26 @@ where
         let w_low = (ram_width & 0xFF) as u8;
         let h_high = ((self.height >> 8) & 0xFF) as u8;
         let h_low = (self.height & 0xFF) as u8;
-        bus.send_command_with_data(cmd::RESOLUTION, &[w_high, w_low, h_high, h_low])?;
+        bus.send_command_with_data(cmd::RESOLUTION, &[w_high, w_low, h_high, h_low])
+            .await?;
 
         // Additional vendor config registers
-        bus.send_command_with_data(0xE7, &[0x1C])?;
-        bus.send_command_with_data(0xE3, &[0x22])?;
-        bus.send_command_with_data(0xB4, &[0xD0])?;
-        bus.send_command_with_data(0xB5, &[0x03])?;
-        bus.send_command_with_data(0xE9, &[0x01])?;
-        bus.send_command_with_data(cmd::VCOM_CONTROL, &[0x08])?;
+        bus.send_command_with_data(0xE7, &[0x1C]).await?;
+        bus.send_command_with_data(0xE3, &[0x22]).await?;
+        bus.send_command_with_data(0xB4, &[0xD0]).await?;
+        bus.send_command_with_data(0xB5, &[0x03]).await?;
+        bus.send_command_with_data(0xE9, &[0x01]).await?;
+        bus.send_command_with_data(cmd::VCOM_CONTROL, &[0x08])
+            .await?;
 
         // Power ON and wait until ready
-        bus.send_command(cmd::POWER_ON)?;
-        bus.wait_busy(false)?;
+        bus.send_command(cmd::POWER_ON).await?;
+        bus.wait_busy(false).await?;
 
         Ok(())
     }
 
-    fn set_window(
+    async fn set_window(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x_start: u32,
@@ -134,7 +159,7 @@ where
         Ok(())
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x: u32,
@@ -143,42 +168,43 @@ where
         Ok(())
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         data: &[u8],
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::DATA_START_TRANSMISSION, data)
+            .await
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         byte: u8,
         count: usize,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::DATA_START_TRANSMISSION)?;
-        bus.send_data_repeated(byte, count)
+        bus.send_command(cmd::DATA_START_TRANSMISSION).await?;
+        bus.send_data_repeated(byte, count).await
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::DISPLAY_REFRESH)?;
-        bus.wait_busy(false)
+        bus.send_command(cmd::DISPLAY_REFRESH).await?;
+        bus.wait_busy(false).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::POWER_OFF)?;
-        bus.wait_busy(false)?;
-        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5])
+        bus.send_command(cmd::POWER_OFF).await?;
+        bus.wait_busy(false).await?;
+        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5]).await
     }
 }

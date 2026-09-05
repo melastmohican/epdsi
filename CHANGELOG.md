@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Phase 5 of the parity remediation plan — the one breaking release. Three changes:
+
+### Added
+
+- An async API via `embedded-hal-async`, alongside the existing blocking one. Controlled by the
+  new `blocking` Cargo feature (**on by default**, so existing `Cargo.toml`s keep compiling
+  unchanged); disabling it (`default-features = false`, then re-add `graphics` if wanted) switches
+  every controller/bus/driver method to its async counterpart — same types, same method names,
+  same `Result`s, just `.await`ed. Generated from one source per controller via native
+  async-fn-in-trait (stable since this crate's MSRV, 1.75; verified against 1.75 directly, not
+  just stable). See the crate root doc's "Cargo features" section for the two behavior
+  differences worth knowing (async busy-waits have no timeout; `render_paged`'s drawing closure
+  stays synchronous in both modes).
+
+### Changed (breaking)
+
+- `EpdBusError` gains two variants — `BufferTooSmall { required, provided }` and
+  `InvalidWindow` — and is now `#[non_exhaustive]`. `EpdDriver::write_frame` rejects a buffer
+  shorter than the active window/channel requires; `EpdDriver::set_window` rejects an inverted
+  range or one outside the panel's declared dimensions. Both reject before anything reaches the
+  bus. `EpdController::Error` now requires `From<ValidationError>` — satisfied automatically by
+  every controller `epdsi` ships; only relevant to an out-of-tree `EpdController` implementation,
+  and none is known to exist.
+- Removed the three `EpdPanel` methods (`vcom`/`custom_lut`/`gate_voltage`) deprecated since
+  0.1.6. Use the `VCOM`/`CUSTOM_LUT`/`GATE_VOLTAGE` associated consts instead — every panel
+  `epdsi` ships already does.
+
 ## [0.1.7] - 2026-09-02
 
 ### Changed

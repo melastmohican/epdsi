@@ -59,7 +59,9 @@
 //! # let (dc_pin, rst_pin, busy_pin) =
 //! #     (PinMock::new(&[]), PinMock::new(&[]), PinMock::new(&[]));
 //! # let mut delay = NoopDelay;
-//! # #[cfg(feature = "graphics")] {
+//! # // `embedded_hal_mock`'s mocks are blocking-only, so this example only compiles in
+//! # // blocking mode; see the crate's `blocking` feature doc for the async equivalent shape.
+//! # #[cfg(all(feature = "graphics", feature = "blocking"))] {
 //! use epdsi::prelude::*;
 //! use embedded_graphics::{
 //!     prelude::*, primitives::{Rectangle, PrimitiveStyle},
@@ -112,6 +114,28 @@
 //!
 //! # Cargo features
 //!
+//! - `blocking` *(default)* — the plain `embedded-hal` 1.0 API used throughout this doc.
+//!   Disabling it (`default-features = false`) switches every controller/bus/driver method
+//!   to its `embedded-hal-async` counterpart instead — the two are mutually exclusive, not
+//!   additive, since a bus can only be one or the other:
+//!
+//!   ```toml
+//!   epdsi = { version = "0.2", default-features = false, features = ["graphics"] }
+//!   ```
+//!
+//!   The async shape mirrors the blocking one exactly (same types, same method names, every
+//!   fallible method returns the same `Result` — just `.await`ed), generated from one source
+//!   per controller via native async-fn-in-trait (stable since this crate's MSRV, 1.75), so
+//!   there is no separate API to learn. Two differences worth knowing before switching:
+//!
+//!   - [`SpiBusWrapper`]'s busy-wait methods poll with a bounded retry/timeout in blocking
+//!     mode, since a blocking spin has no other way to bound its own cost. In async mode they
+//!     wait on the BUSY pin's edge via `embedded-hal-async`'s `Wait` trait instead, with **no
+//!     timeout** — that trait has no timeout primitive to race against without an executor.
+//!     Bound a call yourself if you need one, e.g. `embassy_time::with_timeout(..., epd.refresh(&mut delay))`.
+//!   - [`render_paged`](graphics::render_paged)'s pixel-drawing closure stays synchronous in
+//!     both modes — `embedded-graphics-core`'s `DrawTarget` has no async counterpart — only
+//!     the I/O between pages is `.await`ed.
 //! - `graphics` *(default)* — implements `embedded-graphics-core`'s `DrawTarget` and
 //!   `Dimensions` for [`PageBuffer`]. Disable to drop the dependency; the buffer and
 //!   paged rendering still work, you just fill pixels yourself.

@@ -89,8 +89,14 @@ embedded-graphics = "0.8"
 
 | Feature | Default | Description |
 | :--- | :---: | :--- |
+| `blocking` | yes | The plain `embedded-hal` 1.0 API used in every example below. Disabling it (`default-features = false`, then re-add `graphics` if wanted) switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead — same types, same method names, same `Result`s, just `.await`ed. |
 | `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer` and `render_paged` still work, you just draw into the buffer yourself. |
 | `defmt` | no | Derives `defmt::Format` on the public error and mode enums (`EpdBusError`, `Spi3BusError`, `PervasiveBwryOtpError`, `ColorMode`, `ColorChannel`, `SevenColor`, and the per-controller refresh/variant enums) for logging on embedded targets. |
+
+`blocking` and the async API it replaces are mutually exclusive, not additive — a bus is one or
+the other. See the crate root doc's "Cargo features" section for the two behavior differences
+worth knowing before switching (async busy-waits have no timeout; `render_paged`'s drawing
+closure stays synchronous either way).
 
 The minimum supported Rust version is **1.75**.
 

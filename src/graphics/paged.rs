@@ -1,6 +1,9 @@
 //! GxEPD2-style closure-based paged drawing engine.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
 
 use crate::driver::EpdDriver;
 use crate::graphics::buffer::PageBuffer;
@@ -8,8 +11,15 @@ use crate::traits::{ColorChannel, EpdController, EpdPanel};
 
 /// Executes a GxEPD2-style paged rendering loop over display sub-regions.
 ///
-/// Sweeps through display memory page-by-page using a small stack buffer.
-pub fn render_paged<BUS, CONTROLLER, PANEL, DELAY, F>(
+/// Sweeps through display memory page-by-page using a small stack buffer. The pixel-drawing
+/// closure `draw_fn` stays synchronous in both build modes — `embedded-graphics-core`'s
+/// `DrawTarget` has no async counterpart — only the I/O between pages (`set_window`/
+/// `set_cursor`/`write_frame`/`refresh`) is `.await`ed in async mode.
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+pub async fn render_paged<BUS, CONTROLLER, PANEL, DELAY, F>(
     driver: &mut EpdDriver<BUS, CONTROLLER, PANEL>,
     delay: &mut DELAY,
     channel: ColorChannel,
@@ -51,11 +61,13 @@ where
         draw_fn(&mut page_buf);
 
         // Configure hardware display window and write page chunk to RAM
-        driver.set_window(0, y_start, width - 1, y_end)?;
-        driver.set_cursor(0, y_start)?;
-        driver.write_frame(channel, page_buf.as_slice())?;
+        driver.set_window(0, y_start, width - 1, y_end).await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(channel, page_buf.as_slice())
+            .await?;
     }
 
     // Trigger physical display update
-    driver.refresh(delay)
+    driver.refresh(delay).await
 }

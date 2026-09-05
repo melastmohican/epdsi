@@ -9,9 +9,20 @@
 //! so `set_window`/`set_cursor` flip the Y axis in software (Y-decrement data entry mode) rather than
 //! relying on a register bit like other controllers in this crate.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController, EpdPanel};
@@ -285,62 +296,74 @@ impl Ssd1677Controller {
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ssd1677Controller
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.hard_reset(delay, 10)?;
-        bus.send_command(cmd::SW_RESET)?;
-        delay.delay_ms(10);
+        bus.hard_reset(delay, 10).await?;
+        bus.send_command(cmd::SW_RESET).await?;
+        delay.delay_ms(10).await;
 
         // Internal Temperature Sensor Selection
-        bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])?;
+        bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])
+            .await?;
 
         // Booster Soft-Start Control (wider payload than SSD1680/SSD1681)
-        bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0xAE, 0xC7, 0xC3, 0xC0, 0x80])?;
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0xAE, 0xC7, 0xC3, 0xC0, 0x80])
+            .await?;
 
         // Driver output control: setting display height
         let h_low = ((self.height - 1) & 0xFF) as u8;
         let h_high = (((self.height - 1) >> 8) & 0xFF) as u8;
-        bus.send_command_with_data(cmd::DRIVER_CONTROL, &[h_low, h_high, 0x02])?;
+        bus.send_command_with_data(cmd::DRIVER_CONTROL, &[h_low, h_high, 0x02])
+            .await?;
 
         // Border Waveform Control
-        bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x01])?;
+        bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x01])
+            .await?;
 
         // Panel-declared analog overrides, in the order GxEPD2's SSD168x-family drivers write
         // them. Both absent by default — `GxEPD2_426_GDEQ0426T82` writes neither, so the only
         // panel this controller drives today emits nothing here.
         if let Some(vcom) = self.vcom {
-            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])?;
+            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])
+                .await?;
         }
         if let Some(gate_voltage) = self.gate_voltage {
-            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])?;
+            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])
+                .await?;
         }
 
         // Set RAM Area to full display frame. `set_window` also asserts the Increment-X /
         // Decrement-Y data entry mode the reversed gates require.
-        self.set_window(bus, 0, 0, self.width - 1, self.height - 1)?;
-        self.set_cursor(bus, 0, 0)?;
+        self.set_window(bus, 0, 0, self.width - 1, self.height - 1)
+            .await?;
+        self.set_cursor(bus, 0, 0).await?;
 
         // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`.
         if let Some(lut) = self.custom_lut {
-            bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)?;
+            bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)
+                .await?;
         }
 
         Ok(())
     }
 
-    fn set_window(
+    async fn set_window(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         x_start: u32,
@@ -363,7 +386,8 @@ where
         self.window_origin = (x_start, y_start);
 
         // Re-assert Y-decrement data entry alongside every window change, matching GxEPD2.
-        bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x01])?;
+        bus.send_command_with_data(cmd::DATA_ENTRY_MODE, &[0x01])
+            .await?;
         bus.send_command_with_data(
             cmd::SET_RAMXPOS,
             &[
@@ -372,7 +396,8 @@ where
                 (xe & 0xFF) as u8,
                 ((xe >> 8) & 0xFF) as u8,
             ],
-        )?;
+        )
+        .await?;
         bus.send_command_with_data(
             cmd::SET_RAMYPOS,
             &[
@@ -382,9 +407,10 @@ where
                 ((yy >> 8) & 0xFF) as u8,
             ],
         )
+        .await
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         x: u32,
@@ -396,14 +422,16 @@ where
         bus.send_command_with_data(
             cmd::SET_RAMXCNT,
             &[(xx & 0xFF) as u8, ((xx >> 8) & 0xFF) as u8],
-        )?;
+        )
+        .await?;
         bus.send_command_with_data(
             cmd::SET_RAMYCNT,
             &[(yy_cursor & 0xFF) as u8, ((yy_cursor >> 8) & 0xFF) as u8],
         )
+        .await
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
@@ -416,10 +444,10 @@ where
             | ColorChannel::Yellow
             | ColorChannel::Color7(_) => cmd::WRITE_RED_DATA,
         };
-        bus.send_command_with_data(cmd, data)
+        bus.send_command_with_data(cmd, data).await
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
@@ -435,10 +463,10 @@ where
             } else {
                 cmd::AUTO_WRITE_RED_RAM
             };
-            bus.send_command_with_data(auto_cmd, &[pattern])?;
+            bus.send_command_with_data(auto_cmd, &[pattern]).await?;
             // The datasheet is explicit that BUSY is driven high for the duration; returning
             // before it clears would let the next command land mid-sweep.
-            bus.wait_busy(true)?;
+            bus.wait_busy(true).await?;
 
             // Streaming a plane leaves the address counter wrapped back to the window origin, so
             // callers have always been able to write image data straight afterwards without
@@ -446,7 +474,7 @@ where
             // counter stops, so put it back — otherwise swapping in this path would render the
             // next frame displaced rather than faster.
             let (x, y) = self.window_origin;
-            return self.set_cursor(bus, x, y);
+            return self.set_cursor(bus, x, y).await;
         }
 
         let cmd = if is_bw {
@@ -454,11 +482,11 @@ where
         } else {
             cmd::WRITE_RED_DATA
         };
-        bus.send_command(cmd)?;
-        bus.send_data_repeated(byte, count)
+        bus.send_command(cmd).await?;
+        bus.send_data_repeated(byte, count).await
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
@@ -467,10 +495,12 @@ where
             Ssd1677RefreshMode::Full | Ssd1677RefreshMode::FastFull => [0x40, 0x00],
             Ssd1677RefreshMode::Partial => [0x00, 0x00],
         };
-        bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &bypass)?;
+        bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &bypass)
+            .await?;
 
         if self.refresh_mode == Ssd1677RefreshMode::FastFull {
-            bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[0x5A])?;
+            bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[0x5A])
+                .await?;
         }
 
         let mode_byte = match self.refresh_mode {
@@ -478,16 +508,18 @@ where
             Ssd1677RefreshMode::FastFull => 0xD7,
             Ssd1677RefreshMode::Partial => 0xFC,
         };
-        bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])?;
-        bus.send_command(cmd::MASTER_ACTIVATE)?;
-        bus.wait_busy(true)
+        bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])
+            .await?;
+        bus.send_command(cmd::MASTER_ACTIVATE).await?;
+        bus.wait_busy(true).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::DEEP_SLEEP_MODE, &[0x01])
+            .await
     }
 }

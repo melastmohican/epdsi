@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg(feature = "blocking")]
+//! Blocking-only harness; async coverage lives in `tests/async_smoke_tests.rs`.
 //! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
 //! targets library code only.
 

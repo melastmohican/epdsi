@@ -23,6 +23,8 @@ exclude = [
 [dependencies]
 embedded-hal = "1.0.0"
 embedded-graphics-core = { version = "0.4.0", optional = true }
+embedded-hal-async = "1.0.0"
+maybe-async-cfg = "0.2"
 
 [dependencies.defmt]
 version = "0.3"
@@ -31,9 +33,15 @@ optional = true
 [dev-dependencies]
 embedded-graphics = "0.8.1"
 embedded-hal-mock = "0.11.1"
+pollster = "1"
 
 [features]
-default = ["graphics"]
+default = ["blocking", "graphics"]
+# Blocking `embedded-hal` 1.0 API (the default). Disabling this (via `default-features = false`)
+# switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead —
+# the two APIs are mutually exclusive, not additive, so re-add `graphics` explicitly if wanted:
+# `epdsi = { version = "0.2", default-features = false, features = ["graphics"] }`.
+blocking = []
 graphics = ["dep:embedded-graphics-core"]
 defmt = ["dep:defmt"]
 

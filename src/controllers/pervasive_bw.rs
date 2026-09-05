@@ -2,9 +2,20 @@
 //! implementation (DriverC/DriverF COG family). For the Spectra-4/BWRY family, see
 //! [`crate::controllers::pervasive_bwry::PervasiveBwryController`].
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController};
@@ -153,9 +164,16 @@ impl PervasiveBwController {
         self
     }
 
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl PervasiveBwController {
     /// Writes previous and current frame data for embedded fast differential update mode.
     #[allow(clippy::type_complexity)]
-    pub fn write_fast_frame<SPI, DC, RST, BUSY>(
+    pub async fn write_fast_frame<SPI, DC, RST, BUSY>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         previous_frame: &[u8],
@@ -168,53 +186,59 @@ impl PervasiveBwController {
         BUSY: InputPin,
     {
         // VCOM & data interval setting prior to frame write
-        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x27])?;
+        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x27])
+            .await?;
 
         // First frame (0x10, DTM1) receives OLD / previous image (inverted for display logic)
-        bus.send_command(cmd::WRITE_BW_DATA)?;
+        bus.send_command(cmd::WRITE_BW_DATA).await?;
         let mut buf = [0u8; 64];
         for chunk in previous_frame.chunks(64) {
             for (i, &b) in chunk.iter().enumerate() {
                 buf[i] = !b;
             }
-            bus.send_data(&buf[..chunk.len()])?;
+            bus.send_data(&buf[..chunk.len()]).await?;
         }
 
         // Second frame (0x13, DTM2) receives NEW / current image (inverted for display logic)
-        bus.send_command(cmd::WRITE_RED_DATA)?;
+        bus.send_command(cmd::WRITE_RED_DATA).await?;
         for chunk in current_frame.chunks(64) {
             for (i, &b) in chunk.iter().enumerate() {
                 buf[i] = !b;
             }
-            bus.send_data(&buf[..chunk.len()])?;
+            bus.send_data(&buf[..chunk.len()]).await?;
         }
 
         // Reset VCOM & data interval setting post frame write
-        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])?;
+        bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])
+            .await?;
 
         Ok(())
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for PervasiveBwController
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         // Hardware reset sequence
-        bus.hard_reset(delay, 10)?;
+        bus.hard_reset(delay, 10).await?;
 
         // Pervasive Displays busy pin is active-low (busy when LOW)
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
         // Calculate work settings based on update mode
         let (temp_val, psr_val) = match self.refresh_mode {
@@ -226,33 +250,37 @@ where
         };
 
         // Soft reset command
-        bus.send_command_with_data(cmd::PSR, REG_DATA_SOFT_RESET)?;
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.send_command_with_data(cmd::PSR, REG_DATA_SOFT_RESET)
+            .await?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
         // Temperature calibration
-        bus.send_command_with_data(cmd::INPUT_TEMP, &[temp_val])?;
-        bus.send_command_with_data(cmd::ACTIVE_TEMP, REG_DATA_ACTIVE_TEMP)?;
+        bus.send_command_with_data(cmd::INPUT_TEMP, &[temp_val])
+            .await?;
+        bus.send_command_with_data(cmd::ACTIVE_TEMP, REG_DATA_ACTIVE_TEMP)
+            .await?;
 
         // Driver variant configuration
         match self.driver_variant {
             PervasiveDriverVariant::DriverC => {
-                bus.send_command_with_data(cmd::PSR, &psr_val)?;
+                bus.send_command_with_data(cmd::PSR, &psr_val).await?;
             }
             PervasiveDriverVariant::DriverF => {
-                bus.send_command_with_data(0x4D, &[0x55])?;
-                bus.send_command_with_data(0xE9, &[0x02])?;
+                bus.send_command_with_data(0x4D, &[0x55]).await?;
+                bus.send_command_with_data(0xE9, &[0x02]).await?;
             }
         }
 
         // Fast update VCOM & Data Interval Setting
         if self.refresh_mode == PervasiveRefreshMode::Fast {
-            bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])?;
+            bus.send_command_with_data(cmd::VCOM_INTERVAL, &[0x07])
+                .await?;
         }
 
         Ok(())
     }
 
-    fn set_window(
+    async fn set_window(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x_start: u32,
@@ -264,7 +292,7 @@ where
         Ok(())
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x: u32,
@@ -273,7 +301,7 @@ where
         Ok(())
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
@@ -281,29 +309,31 @@ where
     ) -> Result<(), Self::Error> {
         match channel {
             ColorChannel::BlackWhite => {
-                bus.send_command(cmd::WRITE_BW_DATA)?;
+                bus.send_command(cmd::WRITE_BW_DATA).await?;
                 let mut buf = [0u8; 64];
                 for chunk in data.chunks(64) {
                     for (i, &b) in chunk.iter().enumerate() {
                         buf[i] = !b;
                     }
-                    bus.send_data(&buf[..chunk.len()])?;
+                    bus.send_data(&buf[..chunk.len()]).await?;
                 }
 
                 if self.refresh_mode == PervasiveRefreshMode::Normal && self.auto_clear_secondary {
-                    bus.send_command(cmd::WRITE_RED_DATA)?;
-                    bus.send_data_repeated(0x00, data.len())?;
+                    bus.send_command(cmd::WRITE_RED_DATA).await?;
+                    bus.send_data_repeated(0x00, data.len()).await?;
                 }
                 Ok(())
             }
             ColorChannel::RedYellow
             | ColorChannel::Red
             | ColorChannel::Yellow
-            | ColorChannel::Color7(_) => bus.send_command_with_data(cmd::WRITE_RED_DATA, data),
+            | ColorChannel::Color7(_) => {
+                bus.send_command_with_data(cmd::WRITE_RED_DATA, data).await
+            }
         }
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
@@ -317,28 +347,28 @@ where
             | ColorChannel::Yellow
             | ColorChannel::Color7(_) => (cmd::WRITE_RED_DATA, byte),
         };
-        bus.send_command(cmd)?;
-        bus.send_data_repeated(byte, count)
+        bus.send_command(cmd).await?;
+        bus.send_data_repeated(byte, count).await
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.wait_busy_with_delay(delay, false)?;
-        bus.send_command(cmd::POWER_ON)?;
-        bus.wait_busy_with_delay(delay, false)?;
-        bus.send_command(cmd::DISPLAY_REFRESH)?;
-        bus.wait_busy_with_delay(delay, false)
+        bus.wait_busy_with_delay(delay, false).await?;
+        bus.send_command(cmd::POWER_ON).await?;
+        bus.wait_busy_with_delay(delay, false).await?;
+        bus.send_command(cmd::DISPLAY_REFRESH).await?;
+        bus.wait_busy_with_delay(delay, false).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::POWER_OFF)?;
-        bus.wait_busy_with_delay(delay, false)
+        bus.send_command(cmd::POWER_OFF).await?;
+        bus.wait_busy_with_delay(delay, false).await
     }
 }

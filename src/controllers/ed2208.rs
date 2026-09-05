@@ -20,9 +20,20 @@
 //!
 //! See <https://docs.zephyrproject.org/latest/boards/seeed/reterminal_e1002/doc/index.html>.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController};
@@ -82,9 +93,16 @@ impl Ed2208Controller {
         Self { width, height }
     }
 
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl Ed2208Controller {
     /// Sets partial RAM area window on the controller.
     #[allow(clippy::type_complexity)]
-    pub fn set_partial_ram_area<SPI, DC, RST, BUSY>(
+    pub async fn set_partial_ram_area<SPI, DC, RST, BUSY>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         x: u32,
@@ -114,51 +132,65 @@ impl Ed2208Controller {
                 0x01,
             ],
         )
+        .await
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Ed2208Controller
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         // Hardware reset pulse
-        bus.hard_reset(delay, 20)?;
+        bus.hard_reset(delay, 20).await?;
 
         // Vendor unlock sequence (CMDH)
-        bus.send_command_with_data(cmd::CMDH, &[0x49, 0x55, 0x20, 0x08, 0x09, 0x18])?;
+        bus.send_command_with_data(cmd::CMDH, &[0x49, 0x55, 0x20, 0x08, 0x09, 0x18])
+            .await?;
 
         // Power setting (PWRR)
-        bus.send_command_with_data(cmd::POWER_SETTING, &[0x3F])?;
+        bus.send_command_with_data(cmd::POWER_SETTING, &[0x3F])
+            .await?;
 
         // Panel setting (PSR)
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x5F, 0x69])?;
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x5F, 0x69])
+            .await?;
 
         // Power offset (POFS)
-        bus.send_command_with_data(cmd::POWER_OFF_SEQUENCE, &[0x00, 0x54, 0x00, 0x44])?;
+        bus.send_command_with_data(cmd::POWER_OFF_SEQUENCE, &[0x00, 0x54, 0x00, 0x44])
+            .await?;
 
         // Booster soft start stages
-        bus.send_command_with_data(cmd::BOOSTER_SOFT_START1, &[0x40, 0x1F, 0x1F, 0x2C])?;
-        bus.send_command_with_data(cmd::BOOSTER_SOFT_START2, &[0x6F, 0x1F, 0x17, 0x49])?;
-        bus.send_command_with_data(cmd::BOOSTER_SOFT_START3, &[0x6F, 0x1F, 0x1F, 0x22])?;
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START1, &[0x40, 0x1F, 0x1F, 0x2C])
+            .await?;
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START2, &[0x6F, 0x1F, 0x17, 0x49])
+            .await?;
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START3, &[0x6F, 0x1F, 0x1F, 0x22])
+            .await?;
 
         // PLL control
-        bus.send_command_with_data(cmd::PLL_CONTROL, &[0x08])?;
+        bus.send_command_with_data(cmd::PLL_CONTROL, &[0x08])
+            .await?;
 
         // VCOM & data interval setting (CDI)
-        bus.send_command_with_data(cmd::CDI, &[0x3F])?;
+        bus.send_command_with_data(cmd::CDI, &[0x3F]).await?;
 
         // TCON setting
-        bus.send_command_with_data(cmd::TCON, &[0x02, 0x00])?;
+        bus.send_command_with_data(cmd::TCON, &[0x02, 0x00])
+            .await?;
 
         // Resolution setting (TRES)
         let w = self.width;
@@ -171,22 +203,23 @@ where
                 (h >> 8) as u8,
                 (h & 0xFF) as u8,
             ],
-        )?;
+        )
+        .await?;
 
         // Temperature VDCS setting
-        bus.send_command_with_data(cmd::T_VDCS, &[0x01])?;
+        bus.send_command_with_data(cmd::T_VDCS, &[0x01]).await?;
 
         // Power saving setting (PWS)
-        bus.send_command_with_data(cmd::PWS, &[0x2F])?;
+        bus.send_command_with_data(cmd::PWS, &[0x2F]).await?;
 
         // Power ON and wait while busy (busy active-low)
-        bus.send_command(cmd::POWER_ON)?;
-        bus.wait_busy(false)?;
+        bus.send_command(cmd::POWER_ON).await?;
+        bus.wait_busy(false).await?;
 
         Ok(())
     }
 
-    fn set_window(
+    async fn set_window(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         x_start: u32,
@@ -197,9 +230,10 @@ where
         let w = x_end.saturating_sub(x_start) + 1;
         let h = y_end.saturating_sub(y_start) + 1;
         self.set_partial_ram_area(bus, x_start, y_start, w, h)
+            .await
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x: u32,
@@ -208,54 +242,56 @@ where
         Ok(())
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         data: &[u8],
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::DATA_START_TRANSMISSION, data)
+            .await
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         byte: u8,
         count: usize,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::DATA_START_TRANSMISSION)?;
+        bus.send_command(cmd::DATA_START_TRANSMISSION).await?;
         let buf = [byte; 64];
         let mut remaining = count;
         while remaining > 0 {
             let chunk_len = remaining.min(buf.len());
-            bus.send_data(&buf[..chunk_len])?;
+            bus.send_data(&buf[..chunk_len]).await?;
             remaining -= chunk_len;
         }
         Ok(())
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])?;
-        delay.delay_ms(1);
+        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])
+            .await?;
+        delay.delay_ms(1).await;
         // Busy active-low during full display refresh
-        bus.wait_busy_with_delay(delay, false)
+        bus.wait_busy_with_delay(delay, false).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         // Power off command
-        bus.send_command_with_data(cmd::POWER_OFF, &[0x00])?;
-        bus.wait_busy(false)?;
+        bus.send_command_with_data(cmd::POWER_OFF, &[0x00]).await?;
+        bus.wait_busy(false).await?;
 
         // Deep sleep command
-        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5])
+        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5]).await
     }
 }

@@ -1,8 +1,19 @@
 //! UC8253 E-Paper Display Controller implementation.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::traits::{ColorChannel, EpdController};
@@ -187,12 +198,19 @@ impl Uc8253Controller {
         }
     }
 
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl Uc8253Controller {
     /// Opens the recorded partial window (`PARTIAL_IN` + `PARTIAL_WINDOW`), if one is set.
     ///
     /// The UC8253 requires the window to be re-opened around *each* RAM write and again around
     /// the refresh, so this is emitted per operation rather than once by `set_window`.
     #[allow(clippy::type_complexity)]
-    fn open_window<SPI, DC, RST, BUSY>(
+    async fn open_window<SPI, DC, RST, BUSY>(
         &self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
     ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
@@ -211,7 +229,7 @@ impl Uc8253Controller {
         let y = y_start as u16;
         let ye = y_end as u16;
 
-        bus.send_command(cmd::PARTIAL_IN)?;
+        bus.send_command(cmd::PARTIAL_IN).await?;
         bus.send_command_with_data(
             cmd::PARTIAL_WINDOW,
             &[
@@ -224,11 +242,12 @@ impl Uc8253Controller {
                 0x01,
             ],
         )
+        .await
     }
 
     /// Closes the partial window (`PARTIAL_OUT`), if one is set.
     #[allow(clippy::type_complexity)]
-    fn close_window<SPI, DC, RST, BUSY>(
+    async fn close_window<SPI, DC, RST, BUSY>(
         &self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
     ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
@@ -239,7 +258,7 @@ impl Uc8253Controller {
         BUSY: InputPin,
     {
         if self.window.is_some() {
-            bus.send_command(cmd::PARTIAL_OUT)?;
+            bus.send_command(cmd::PARTIAL_OUT).await?;
         }
         Ok(())
     }
@@ -247,7 +266,7 @@ impl Uc8253Controller {
     /// Re-sends the two Panel Setting register writes performed during `init_sequence`, used to
     /// undo the CCSET/TSSET "TSFIX" temperature override after a fast-update refresh.
     #[allow(clippy::type_complexity)]
-    fn reset_panel_setting<SPI, DC, RST, BUSY, DELAY>(
+    async fn reset_panel_setting<SPI, DC, RST, BUSY, DELAY>(
         &self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
@@ -262,34 +281,42 @@ impl Uc8253Controller {
         // `0x1E` clears RST_N, which is a soft reset; the controller needs time to settle before
         // `0x1F` releases it. Without the wait the reset's power-on defaults win and the scan
         // direction flips, rotating every subsequent frame by 180 degrees.
-        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
-        delay.delay_ms(1);
+        bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])
+            .await?;
+        delay.delay_ms(1).await;
         bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])
+            .await
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Uc8253Controller
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         match self.variant {
             Uc8253Variant::Gdey037t03 => {
-                bus.hard_reset(delay, 10)?;
+                bus.hard_reset(delay, 10).await?;
                 // `0x1E` clears RST_N (soft reset); the 1 ms wait lets it settle before `0x1F`
                 // releases it.
-                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])?;
-                delay.delay_ms(1);
-                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])?;
+                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1E, 0x0D])
+                    .await?;
+                delay.delay_ms(1).await;
+                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x1F, 0x0D])
+                    .await?;
             }
             Uc8253Variant::Se0352n14 => {
                 // A 30 ms RST low pulse, matching Pervasive Displays' reference driver for this
@@ -299,20 +326,21 @@ where
                 // returns having drawn nothing, at a random frame each run.
                 //
                 // `hard_reset` does not cover the settle that must follow, so that is added here.
-                bus.hard_reset(delay, 30)?;
-                delay.delay_ms(200);
+                bus.hard_reset(delay, 30).await?;
+                delay.delay_ms(200).await;
 
                 // Power comes up here rather than per-refresh: this panel's refresh is a bare
                 // `DISPLAY_REFRESH`, so the rails stay up between frames.
-                bus.send_command(cmd::POWER_ON)?;
-                delay.delay_ms(100);
-                bus.wait_busy_with_delay(delay, false)?;
+                bus.send_command(cmd::POWER_ON).await?;
+                delay.delay_ms(100).await;
+                bus.wait_busy_with_delay(delay, false).await?;
 
                 // `0x87` — not the `0x97` the GDEY037T03 profile uses. The two differ in the DDX
                 // polarity bits, and `0x87` is what makes `0x00` mean white in both RAM planes on
                 // this panel. Re-issuing `0x97` later would invert black and white.
-                bus.send_command_with_data(cmd::CDI, &[0x87])?;
-                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x03, 0x0D])?;
+                bus.send_command_with_data(cmd::CDI, &[0x87]).await?;
+                bus.send_command_with_data(cmd::PANEL_SETTING, &[0x03, 0x0D])
+                    .await?;
                 // Unlike the GDEY037T03, which encodes its size in the Panel Setting bits, this
                 // panel needs an explicit resolution: HRES ignores the low 3 bits, VRES is 16-bit.
                 bus.send_command_with_data(
@@ -322,9 +350,11 @@ where
                         (self.height >> 8) as u8,
                         (self.height & 0xFF) as u8,
                     ],
-                )?;
-                bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0x2F, 0x2F, 0x2E])?;
-                bus.wait_busy_with_delay(delay, false)?;
+                )
+                .await?;
+                bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0x2F, 0x2F, 0x2E])
+                    .await?;
+                bus.wait_busy_with_delay(delay, false).await?;
             }
         }
         Ok(())
@@ -336,7 +366,7 @@ where
     /// again around the refresh, so the commands are emitted by `write_frame`,
     /// `write_frame_pattern` and `trigger_refresh`. Use [`Uc8253Controller::clear_window`] to
     /// return to full-frame addressing.
-    fn set_window(
+    async fn set_window(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         x_start: u32,
@@ -348,7 +378,7 @@ where
         Ok(())
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x: u32,
@@ -358,19 +388,19 @@ where
         Ok(())
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
         data: &[u8],
     ) -> Result<(), Self::Error> {
         let cmd = self.plane_command(channel);
-        self.open_window(bus)?;
-        bus.send_command_with_data(cmd, data)?;
-        self.close_window(bus)
+        self.open_window(bus).await?;
+        bus.send_command_with_data(cmd, data).await?;
+        self.close_window(bus).await
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         channel: ColorChannel,
@@ -378,13 +408,13 @@ where
         count: usize,
     ) -> Result<(), Self::Error> {
         let cmd = self.plane_command(channel);
-        self.open_window(bus)?;
-        bus.send_command(cmd)?;
-        bus.send_data_repeated(byte, count)?;
-        self.close_window(bus)
+        self.open_window(bus).await?;
+        bus.send_command(cmd).await?;
+        bus.send_data_repeated(byte, count).await?;
+        self.close_window(bus).await
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
@@ -392,7 +422,7 @@ where
         // The refresh gets its own partial-window session, re-opened here and closed after the
         // update. The window is deliberately kept for subsequent operations; call
         // `clear_window` to return to full-frame addressing.
-        self.open_window(bus)?;
+        self.open_window(bus).await?;
 
         if self.variant == Uc8253Variant::Se0352n14 {
             // `CDI` is deliberately not re-issued — `0x97` would move the DDX polarity bits away
@@ -410,18 +440,19 @@ where
             // does not assert BUSY at all on this panel, so the edge wait just burns its timeout,
             // and when BUSY *does* blip low during a ramp it can release the wait before the
             // booster has stabilised.
-            bus.send_command(cmd::POWER_ON)?;
-            delay.delay_ms(100);
-            bus.wait_busy_with_delay(delay, false)?;
+            bus.send_command(cmd::POWER_ON).await?;
+            delay.delay_ms(100).await;
+            bus.wait_busy_with_delay(delay, false).await?;
 
             // Wait for BUSY to actually assert before waiting for it to clear. A fixed settling
             // delay is not sufficient: assertion latency varies, and a 10 ms guard was observed
             // holding on some refreshes and missing on others on the same board, leaving the
             // panel a frame behind whenever it missed.
-            bus.send_command(cmd::DISPLAY_REFRESH)?;
-            bus.wait_busy_assert(delay, false, BUSY_ASSERT_TIMEOUT_MS)?;
-            bus.wait_busy_with_delay(delay, false)?;
-            return self.close_window(bus);
+            bus.send_command(cmd::DISPLAY_REFRESH).await?;
+            bus.wait_busy_assert(delay, false, BUSY_ASSERT_TIMEOUT_MS)
+                .await?;
+            bus.wait_busy_with_delay(delay, false).await?;
+            return self.close_window(bus).await;
         }
 
         let is_fast = matches!(
@@ -435,42 +466,45 @@ where
 
         if is_fast {
             let temp = if is_partial { 0x6E } else { 0x5A };
-            bus.send_command_with_data(cmd::CASCADE_SETTING, &[0x02])?;
-            bus.send_command_with_data(cmd::FORCE_TEMP, &[temp])?;
+            bus.send_command_with_data(cmd::CASCADE_SETTING, &[0x02])
+                .await?;
+            bus.send_command_with_data(cmd::FORCE_TEMP, &[temp])
+                .await?;
         }
 
         let cdi = if is_partial { 0xD7 } else { 0x97 };
-        bus.send_command_with_data(cmd::CDI, &[cdi])?;
+        bus.send_command_with_data(cmd::CDI, &[cdi]).await?;
 
-        bus.send_command(cmd::POWER_ON)?;
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.send_command(cmd::POWER_ON).await?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
         // Wait for the BUSY edge before waiting for completion. On a host that polls quickly this
         // is what separates "the refresh finished" from "the panel had not started yet" — without
         // it a refresh can report 0 ms while still running, or while the controller ignored the
         // command entirely. Costs one poll when BUSY asserts normally, so the fast-partial path is
         // unaffected; only the already-broken case pays the timeout.
-        bus.send_command(cmd::DISPLAY_REFRESH)?;
-        bus.wait_busy_assert(delay, false, BUSY_ASSERT_TIMEOUT_MS)?;
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.send_command(cmd::DISPLAY_REFRESH).await?;
+        bus.wait_busy_assert(delay, false, BUSY_ASSERT_TIMEOUT_MS)
+            .await?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
-        bus.send_command(cmd::POWER_OFF)?;
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.send_command(cmd::POWER_OFF).await?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
         if is_fast {
-            self.reset_panel_setting(bus, delay)?;
+            self.reset_panel_setting(bus, delay).await?;
         }
 
-        self.close_window(bus)
+        self.close_window(bus).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::POWER_OFF)?;
-        bus.wait_busy_with_delay(delay, false)?;
-        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5])
+        bus.send_command(cmd::POWER_OFF).await?;
+        bus.wait_busy_with_delay(delay, false).await?;
+        bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5]).await
     }
 }

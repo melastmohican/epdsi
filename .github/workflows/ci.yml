@@ -35,6 +35,14 @@ jobs:
             # Broken intra-doc links are warnings by default, so the doc job
             # would pass while shipping dead links to docs.rs.
             rustdocflags: "-D warnings"
+          # Async API (`blocking` off). `--no-default-features` above already covers
+          # async-without-graphics; these three cover the realistic async consumer shape.
+          - command: check
+            args: --no-default-features --features graphics --all-targets
+          - command: test
+            args: --no-default-features --features graphics --workspace
+          - command: clippy
+            args: --no-default-features --features graphics --workspace -- -D warnings
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,8 +75,13 @@ jobs:
         # The committed Cargo.lock is format v4, which Cargo 1.75 cannot parse.
         # Resolving fresh here also mirrors what a consumer on the MSRV would get.
         run: rm -f Cargo.lock
-      - name: Check library
+      - name: Check library (blocking)
         run: cargo check --all-features
+      - name: Check library (async)
+        # `--all-features` above enables `blocking`, which wins over the async `cfg` branches —
+        # native async-fn-in-trait (this crate's whole MSRV rationale) is only actually exercised
+        # with `blocking` off.
+        run: cargo check --no-default-features --features graphics --all-targets
 
   build-targets:
     name: Build for Targets
@@ -80,6 +93,9 @@ jobs:
           - thumbv6m-none-eabi             # RP2040 (Cortex-M0+)
           - thumbv7em-none-eabihf          # STM32/Cortex-M4F
           - riscv32imac-unknown-none-elf    # ESP32-C3/C6
+        args:
+          - ""                                            # blocking (default)
+          - "--no-default-features --features graphics"   # async
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -91,4 +107,4 @@ jobs:
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
       - name: Build library
-        run: cargo check --target ${{ matrix.target }}
+        run: cargo check --target ${{ matrix.target }} ${{ matrix.args }}

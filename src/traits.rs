@@ -2,7 +2,12 @@
 //!
 //! Decouples the physical display panel specs (`EpdPanel`) from the driver IC logic (`EpdController`).
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+
+use crate::bus::ValidationError;
 
 /// Color operation modes supported by E-Paper displays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,54 +126,39 @@ pub trait EpdPanel {
     /// `None` leaves the panel on its OTP gate voltage.
     const GATE_VOLTAGE: Option<u8> = None;
 
-    /// Optional VCOM voltage configuration override byte.
-    #[deprecated(
-        since = "0.1.6",
-        note = "use the `VCOM` associated const instead. These `&self` hooks are unreachable: \
-                panels are zero-sized types held through `PhantomData`, so no instance ever \
-                exists to call them on. Removed in 0.2.0."
-    )]
-    fn vcom(&self) -> Option<u8> {
-        None
-    }
-
-    /// Optional custom embedded Look-Up Table (LUT) for driving waveforms.
-    #[deprecated(
-        since = "0.1.6",
-        note = "use the `CUSTOM_LUT` associated const instead. These `&self` hooks are \
-                unreachable: panels are zero-sized types held through `PhantomData`, so no \
-                instance ever exists to call them on. Removed in 0.2.0."
-    )]
-    fn custom_lut(&self) -> Option<&'static [u8]> {
-        None
-    }
-
-    /// Optional Gate Driving Voltage override parameter.
-    #[deprecated(
-        since = "0.1.6",
-        note = "use the `GATE_VOLTAGE` associated const instead. These `&self` hooks are \
-                unreachable: panels are zero-sized types held through `PhantomData`, so no \
-                instance ever exists to call them on. Removed in 0.2.0."
-    )]
-    fn gate_voltage(&self) -> Option<u8> {
-        None
-    }
 }
 
 /// Trait encapsulating driver IC command sets, register sequences, and refresh triggers.
+///
+/// Native async-fn-in-trait (stable since Rust 1.75, this crate's MSRV) makes every method here
+/// `async fn` in async mode with no `async-trait` boxing needed — see the crate's `blocking`
+/// feature doc for how the two variants are generated from one source.
+///
+/// `async_fn_in_trait` is silenced deliberately: this crate is `no_std` and targets
+/// single-executor embedded runtimes (e.g. `embassy`), where a `Send` bound on the returned
+/// future buys nothing and many real pin/SPI peripheral types are not `Send` in the first place.
+#[allow(async_fn_in_trait)]
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 pub trait EpdController<BUS> {
     /// Error type emitted by controller operations or underlying bus.
-    type Error;
+    ///
+    /// Must be constructible from [`ValidationError`] so [`EpdDriver`](crate::driver::EpdDriver)
+    /// can reject an out-of-bounds buffer or window before any byte reaches the bus, without
+    /// needing to know this controller's concrete bus/pin error types.
+    type Error: From<ValidationError>;
 
     /// Executes the hardware/software initialization sequence for the driver IC.
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut BUS,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error>;
 
     /// Sets active display RAM window coordinates.
-    fn set_window(
+    async fn set_window(
         &mut self,
         bus: &mut BUS,
         x_start: u32,
@@ -178,10 +168,10 @@ pub trait EpdController<BUS> {
     ) -> Result<(), Self::Error>;
 
     /// Sets RAM address cursor position.
-    fn set_cursor(&mut self, bus: &mut BUS, x: u32, y: u32) -> Result<(), Self::Error>;
+    async fn set_cursor(&mut self, bus: &mut BUS, x: u32, y: u32) -> Result<(), Self::Error>;
 
     /// Writes raw slice data to targeted color channel RAM.
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut BUS,
         channel: ColorChannel,
@@ -189,7 +179,7 @@ pub trait EpdController<BUS> {
     ) -> Result<(), Self::Error>;
 
     /// Writes a repeating byte pattern to display RAM (useful for clearing frames).
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut BUS,
         channel: ColorChannel,
@@ -198,14 +188,14 @@ pub trait EpdController<BUS> {
     ) -> Result<(), Self::Error>;
 
     /// Triggers display update refresh and waits until busy signal clears.
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut BUS,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error>;
 
     /// Puts the controller IC into deep sleep power saving mode.
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut BUS,
         delay: &mut DELAY,

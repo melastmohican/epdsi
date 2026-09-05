@@ -7,9 +7,20 @@
 //! must be called once, using raw GPIO pins (not the hardware SPI peripheral), before
 //! [`crate::traits::EpdController::init_sequence`] is invoked through the normal `SpiBusWrapper`.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
 use crate::bus3::{DynamicPin, Spi3Bus, Spi3BusError};
@@ -144,12 +155,19 @@ impl PervasiveBwryController {
         self.variant
     }
 
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl PervasiveBwryController {
     /// Performs the panel reset and OTP chip-ID/register read handshake over the bit-banged
     /// 3-wire bus, populating the register data later consumed by `init_sequence`. Must be called
     /// once, using raw GPIO pins (not the hardware SPI peripheral / `SpiBusWrapper`), before
     /// building the driver's normal `SpiBusWrapper`-based bus and calling `EpdDriver::init`.
     #[allow(clippy::type_complexity)]
-    pub fn read_otp<CS, SCK, DATA, DC, RST, BUSY, DELAY>(
+    pub async fn read_otp<CS, SCK, DATA, DC, RST, BUSY, DELAY>(
         &mut self,
         bus: &mut Spi3Bus<CS, SCK, DATA, DC, RST, BUSY>,
         delay: &mut DELAY,
@@ -173,13 +191,13 @@ impl PervasiveBwryController {
         BUSY: InputPin,
         DELAY: DelayNs,
     {
-        bus.reset(delay)?;
+        bus.reset(delay).await?;
 
         // Chip-ID handshake (shared preamble for both variants)
-        bus.write_cmd(delay, cmd::READ_CHIP_ID)?;
-        delay.delay_ms(8);
-        let hi = bus.read_data_byte(delay)?;
-        let lo = bus.read_data_byte(delay)?;
+        bus.write_cmd(delay, cmd::READ_CHIP_ID).await?;
+        delay.delay_ms(8).await;
+        let hi = bus.read_data_byte(delay).await?;
+        let lo = bus.read_data_byte(delay).await?;
         let raw = ((hi as u16) << 8) | (lo as u16);
         let id = if raw == 0x8302 { 0x0302 } else { raw };
         if id != self.variant.expected_chip_id() {
@@ -190,33 +208,33 @@ impl PervasiveBwryController {
 
         match self.variant {
             PervasiveBwryVariant::DriverF => {
-                bus.write_cmd(delay, 0xa4)?;
-                bus.write_data(delay, 0x15)?;
-                bus.write_data(delay, 0x00)?;
-                bus.write_data(delay, 0x01)?;
-                bus.wait_busy(delay)?;
-                bus.write_cmd(delay, 0xa1)?;
-                let _dummy = bus.read_data_byte(delay)?;
-                self.otp_data[0] = bus.read_byte_no_dc(delay)?;
+                bus.write_cmd(delay, 0xa4).await?;
+                bus.write_data(delay, 0x15).await?;
+                bus.write_data(delay, 0x00).await?;
+                bus.write_data(delay, 0x01).await?;
+                bus.wait_busy(delay).await?;
+                bus.write_cmd(delay, 0xa1).await?;
+                let _dummy = bus.read_data_byte(delay).await?;
+                self.otp_data[0] = bus.read_byte_no_dc(delay).await?;
                 if self.otp_data[0] != 0xa5 {
                     return Err(PervasiveBwryOtpError::InvalidOtpMarker);
                 }
             }
             PervasiveBwryVariant::DriverA => {
-                bus.write_cmd(delay, 0xa2)?;
-                bus.write_data(delay, 0x00)?;
-                bus.write_data(delay, 0x15)?;
-                bus.write_data(delay, 0x00)?;
-                bus.write_cmd(delay, 0xa0)?;
-                bus.write_cmd(delay, 0x92)?;
-                let _dummy = bus.read_data_byte(delay)?;
-                self.otp_data[0] = bus.read_byte_no_dc(delay)?;
+                bus.write_cmd(delay, 0xa2).await?;
+                bus.write_data(delay, 0x00).await?;
+                bus.write_data(delay, 0x15).await?;
+                bus.write_data(delay, 0x00).await?;
+                bus.write_cmd(delay, 0xa0).await?;
+                bus.write_cmd(delay, 0x92).await?;
+                let _dummy = bus.read_data_byte(delay).await?;
+                self.otp_data[0] = bus.read_byte_no_dc(delay).await?;
                 if self.otp_data[0] != 0xa5 {
                     // Bank-2 fallback: discard 111 bytes, then re-check the marker.
                     for _ in 1..0x70 {
-                        bus.read_byte_no_dc(delay)?;
+                        bus.read_byte_no_dc(delay).await?;
                     }
-                    self.otp_data[0] = bus.read_byte_no_dc(delay)?;
+                    self.otp_data[0] = bus.read_byte_no_dc(delay).await?;
                     if self.otp_data[0] != 0xa5 {
                         return Err(PervasiveBwryOtpError::InvalidOtpMarker);
                     }
@@ -225,80 +243,109 @@ impl PervasiveBwryController {
         }
 
         for i in 1..otp_len {
-            self.otp_data[i] = bus.read_byte_no_dc(delay)?;
+            self.otp_data[i] = bus.read_byte_no_dc(delay).await?;
         }
 
         Ok(())
     }
 }
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>>
     for PervasiveBwryController
 where
     SPI: SpiDevice,
     DC: OutputPin,
     RST: OutputPin,
-    BUSY: InputPin,
+    BUSY: InputPin + Wait,
 {
     type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
 
-    fn init_sequence<DELAY: DelayNs>(
+    async fn init_sequence<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         // Hardware reset sequence (matches the reference's per-`updateNormal()`-call COG_reset();
         // `read_otp` already performed the initial reset once as part of `begin()`).
-        bus.hard_reset(delay, 20)?;
+        bus.hard_reset(delay, 20).await?;
 
         // Pervasive BWRY busy pin is active-low (busy when LOW)
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.wait_busy_with_delay(delay, false).await?;
 
         // Common preamble
-        bus.send_command_with_data(cmd::ACTIVE_STATE, &[0x02])?;
-        bus.send_command_with_data(cmd::INPUT_TEMP, &[self.temperature_c as u8])?;
+        bus.send_command_with_data(cmd::ACTIVE_STATE, &[0x02])
+            .await?;
+        bus.send_command_with_data(cmd::INPUT_TEMP, &[self.temperature_c as u8])
+            .await?;
 
         match self.variant {
             PervasiveBwryVariant::DriverF => {
-                bus.send_command(0xa5)?;
-                bus.wait_busy_with_delay(delay, false)?;
-                bus.send_command_with_data(0x01, &self.otp_data[16..17])?;
-                bus.send_command_with_data(cmd::PSR, &self.otp_data[17..19])?;
-                bus.send_command_with_data(0x03, &self.otp_data[30..33])?;
-                bus.send_command_with_data(0x06, &self.otp_data[23..30])?;
-                bus.send_command_with_data(cmd::CDI, &self.otp_data[39..40])?;
-                bus.send_command_with_data(0x60, &self.otp_data[40..42])?;
-                bus.send_command_with_data(0x61, &self.otp_data[19..23])?;
-                bus.send_command_with_data(0xe7, &self.otp_data[33..34])?;
-                bus.send_command_with_data(0xe3, &self.otp_data[42..43])?;
-                bus.send_command_with_data(0x4d, &self.otp_data[43..44])?;
-                bus.send_command_with_data(0xb4, &self.otp_data[44..45])?;
-                bus.send_command_with_data(0xb5, &self.otp_data[45..46])?;
-                bus.send_command_with_data(0xe9, &[0x01])?;
-                bus.send_command_with_data(0x30, &[0x08])?; // PLL (fixed, not OTP-derived for this variant)
+                bus.send_command(0xa5).await?;
+                bus.wait_busy_with_delay(delay, false).await?;
+                bus.send_command_with_data(0x01, &self.otp_data[16..17])
+                    .await?;
+                bus.send_command_with_data(cmd::PSR, &self.otp_data[17..19])
+                    .await?;
+                bus.send_command_with_data(0x03, &self.otp_data[30..33])
+                    .await?;
+                bus.send_command_with_data(0x06, &self.otp_data[23..30])
+                    .await?;
+                bus.send_command_with_data(cmd::CDI, &self.otp_data[39..40])
+                    .await?;
+                bus.send_command_with_data(0x60, &self.otp_data[40..42])
+                    .await?;
+                bus.send_command_with_data(0x61, &self.otp_data[19..23])
+                    .await?;
+                bus.send_command_with_data(0xe7, &self.otp_data[33..34])
+                    .await?;
+                bus.send_command_with_data(0xe3, &self.otp_data[42..43])
+                    .await?;
+                bus.send_command_with_data(0x4d, &self.otp_data[43..44])
+                    .await?;
+                bus.send_command_with_data(0xb4, &self.otp_data[44..45])
+                    .await?;
+                bus.send_command_with_data(0xb5, &self.otp_data[45..46])
+                    .await?;
+                bus.send_command_with_data(0xe9, &[0x01]).await?;
+                bus.send_command_with_data(0x30, &[0x08]).await?; // PLL (fixed, not OTP-derived for this variant)
             }
             PervasiveBwryVariant::DriverA => {
-                bus.send_command_with_data(0x01, &self.otp_data[16..17])?;
-                bus.send_command_with_data(cmd::PSR, &self.otp_data[17..19])?;
-                bus.send_command_with_data(0x03, &self.otp_data[30..33])?;
-                bus.send_command_with_data(0x06, &self.otp_data[23..26])?;
-                bus.send_command_with_data(cmd::CDI, &self.otp_data[39..40])?;
-                bus.send_command_with_data(0x60, &self.otp_data[40..42])?;
-                bus.send_command_with_data(0x61, &self.otp_data[19..23])?;
-                bus.send_command_with_data(0xe3, &self.otp_data[42..43])?;
-                bus.send_command_with_data(0xe7, &self.otp_data[33..34])?;
-                bus.send_command_with_data(0x65, &self.otp_data[34..38])?;
-                bus.send_command_with_data(0x30, &self.otp_data[38..39])?;
-                bus.send_command_with_data(0xe9, &[0x01])?;
-                bus.send_command(cmd::POWER_ON)?;
-                bus.wait_busy_with_delay(delay, false)?;
+                bus.send_command_with_data(0x01, &self.otp_data[16..17])
+                    .await?;
+                bus.send_command_with_data(cmd::PSR, &self.otp_data[17..19])
+                    .await?;
+                bus.send_command_with_data(0x03, &self.otp_data[30..33])
+                    .await?;
+                bus.send_command_with_data(0x06, &self.otp_data[23..26])
+                    .await?;
+                bus.send_command_with_data(cmd::CDI, &self.otp_data[39..40])
+                    .await?;
+                bus.send_command_with_data(0x60, &self.otp_data[40..42])
+                    .await?;
+                bus.send_command_with_data(0x61, &self.otp_data[19..23])
+                    .await?;
+                bus.send_command_with_data(0xe3, &self.otp_data[42..43])
+                    .await?;
+                bus.send_command_with_data(0xe7, &self.otp_data[33..34])
+                    .await?;
+                bus.send_command_with_data(0x65, &self.otp_data[34..38])
+                    .await?;
+                bus.send_command_with_data(0x30, &self.otp_data[38..39])
+                    .await?;
+                bus.send_command_with_data(0xe9, &[0x01]).await?;
+                bus.send_command(cmd::POWER_ON).await?;
+                bus.wait_busy_with_delay(delay, false).await?;
             }
         }
 
         Ok(())
     }
 
-    fn set_window(
+    async fn set_window(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x_start: u32,
@@ -309,7 +356,7 @@ where
         Ok(())
     }
 
-    fn set_cursor(
+    async fn set_cursor(
         &mut self,
         _bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _x: u32,
@@ -318,51 +365,53 @@ where
         Ok(())
     }
 
-    fn write_frame(
+    async fn write_frame(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         data: &[u8],
     ) -> Result<(), Self::Error> {
-        bus.send_command_with_data(cmd::WRITE_DATA, data)
+        bus.send_command_with_data(cmd::WRITE_DATA, data).await
     }
 
-    fn write_frame_pattern(
+    async fn write_frame_pattern(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         _channel: ColorChannel,
         byte: u8,
         count: usize,
     ) -> Result<(), Self::Error> {
-        bus.send_command(cmd::WRITE_DATA)?;
-        bus.send_data_repeated(byte, count)
+        bus.send_command(cmd::WRITE_DATA).await?;
+        bus.send_data_repeated(byte, count).await
     }
 
-    fn trigger_refresh<DELAY: DelayNs>(
+    async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         if self.variant == PervasiveBwryVariant::DriverF {
-            bus.send_command(cmd::POWER_ON)?;
-            bus.wait_busy_with_delay(delay, false)?;
+            bus.send_command(cmd::POWER_ON).await?;
+            bus.wait_busy_with_delay(delay, false).await?;
         }
-        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])?;
-        bus.wait_busy_with_delay(delay, false)
+        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])
+            .await?;
+        bus.wait_busy_with_delay(delay, false).await
     }
 
-    fn sleep<DELAY: DelayNs>(
+    async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        bus.send_command_with_data(cmd::POWER_OFF, &[0x00])?;
-        bus.wait_busy_with_delay(delay, false)?;
+        bus.send_command_with_data(cmd::POWER_OFF, &[0x00]).await?;
+        bus.wait_busy_with_delay(delay, false).await?;
         // DriverF has no additional shutdown command (falls to the reference's `default:` case);
         // DriverA re-sends the PSR from OTP-derived data before the long power-down delay.
         if self.variant == PervasiveBwryVariant::DriverA {
-            bus.send_command_with_data(cmd::PSR, &self.otp_data[26..28])?;
-            delay.delay_ms(100);
+            bus.send_command_with_data(cmd::PSR, &self.otp_data[26..28])
+                .await?;
+            delay.delay_ms(100).await;
         }
         Ok(())
     }

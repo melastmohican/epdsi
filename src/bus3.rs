@@ -9,7 +9,11 @@
 //! cannot express this (a `SpiDevice`'s CS handling is opaque, and full-duplex reads assume a
 //! separate MISO line the panel never drives during this handshake) — hence this dedicated type.
 
+#[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+
 use embedded_hal::digital::{InputPin, OutputPin};
 
 /// A GPIO pin whose direction can be switched at runtime between push-pull output and floating
@@ -95,28 +99,50 @@ where
     pub fn release(self) -> (CS, SCK, DATA, DC, RST, BUSY) {
         (self.cs, self.sck, self.data, self.dc, self.rst, self.busy)
     }
+}
 
+/// Every other method bit-bangs bytes over GPIO with `delay_us`/`delay_ms` pacing rather than
+/// through a `SpiDevice`, so unlike `SpiBusWrapper`, there is no `Wait`-based edge-triggering here
+/// to switch to: `wait_busy`'s poll-with-retry-cap algorithm stays identical in both modes — this
+/// is a one-shot pre-init OTP handshake (`PervasiveBwryController::read_otp`), not a hot path, so
+/// keeping its existing timeout safety net in async mode too is simpler and no worse than losing
+/// it. Only the delay calls need `.await` in async mode; `maybe_async_cfg` handles that
+/// mechanically here, with no manual `#[cfg]` split needed anywhere in this block.
+#[allow(clippy::type_complexity)]
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl<CS, SCK, DATA, DC, RST, BUSY> Spi3Bus<CS, SCK, DATA, DC, RST, BUSY>
+where
+    CS: OutputPin,
+    SCK: OutputPin,
+    DATA: DynamicPin,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin,
+{
     /// Performs the hardware reset sequence matching the reference driver's `COG_reset`/`b_reset`
     /// timing (delay 20ms, RST high, delay 10ms, RST low, delay 20ms, RST high, delay 10ms), then
     /// waits for the busy pin to signal idle.
-    pub fn reset<DELAY: DelayNs>(
+    pub async fn reset<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error> {
-        delay.delay_ms(20);
+        delay.delay_ms(20).await;
         self.rst.set_high().map_err(Spi3BusError::Reset)?;
-        delay.delay_ms(10);
+        delay.delay_ms(10).await;
         self.rst.set_low().map_err(Spi3BusError::Reset)?;
-        delay.delay_ms(20);
+        delay.delay_ms(20).await;
         self.rst.set_high().map_err(Spi3BusError::Reset)?;
-        delay.delay_ms(10);
+        delay.delay_ms(10).await;
         self.cs.set_high().map_err(Spi3BusError::Cs)?;
-        delay.delay_ms(10);
-        self.wait_busy(delay)
+        delay.delay_ms(10).await;
+        self.wait_busy(delay).await
     }
 
     /// Polls the BUSY pin until idle (active-low: busy while LOW), delaying between iterations.
-    pub fn wait_busy<DELAY: DelayNs>(
+    pub async fn wait_busy<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error> {
@@ -124,7 +150,7 @@ where
         loop {
             let is_busy = !self.busy.is_high().map_err(Spi3BusError::Busy)?;
             if is_busy {
-                delay.delay_ms(1);
+                delay.delay_ms(1).await;
                 retries += 1;
                 if retries > 1_500 {
                     break;
@@ -137,7 +163,7 @@ where
     }
 
     /// Bit-bangs a single byte onto the DATA line, MSB first, toggling SCK once per bit.
-    fn write_byte<DELAY: DelayNs>(
+    async fn write_byte<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
         value: u8,
@@ -149,17 +175,17 @@ where
             } else {
                 self.data.set_low().map_err(Spi3BusError::Data)?;
             }
-            delay.delay_us(1);
+            delay.delay_us(1).await;
             self.sck.set_high().map_err(Spi3BusError::Sck)?;
-            delay.delay_us(1);
+            delay.delay_us(1).await;
             self.sck.set_low().map_err(Spi3BusError::Sck)?;
-            delay.delay_us(1);
+            delay.delay_us(1).await;
         }
         Ok(())
     }
 
     /// Bit-bangs a single byte in from the DATA line, MSB first, toggling SCK once per bit.
-    fn read_byte<DELAY: DelayNs>(
+    async fn read_byte<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error, u8>
@@ -168,49 +194,49 @@ where
         let mut value = 0u8;
         for i in 0..8 {
             self.sck.set_high().map_err(Spi3BusError::Sck)?;
-            delay.delay_us(1);
+            delay.delay_us(1).await;
             if self.data.is_high().map_err(Spi3BusError::Data)? {
                 value |= 1 << (7 - i);
             }
             self.sck.set_low().map_err(Spi3BusError::Sck)?;
-            delay.delay_us(1);
+            delay.delay_us(1).await;
         }
         Ok(value)
     }
 
     /// Sends a single command byte (DC low), bracketed by its own CS select/unselect pulse.
-    pub fn write_cmd<DELAY: DelayNs>(
+    pub async fn write_cmd<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
         byte: u8,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error> {
         self.dc.set_low().map_err(Spi3BusError::Dc)?;
         self.cs.set_low().map_err(Spi3BusError::Cs)?;
-        self.write_byte(delay, byte)?;
+        self.write_byte(delay, byte).await?;
         self.cs.set_high().map_err(Spi3BusError::Cs)
     }
 
     /// Sends a single data byte (DC high), bracketed by its own CS select/unselect pulse.
-    pub fn write_data<DELAY: DelayNs>(
+    pub async fn write_data<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
         byte: u8,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error> {
         self.dc.set_high().map_err(Spi3BusError::Dc)?;
         self.cs.set_low().map_err(Spi3BusError::Cs)?;
-        self.write_byte(delay, byte)?;
+        self.write_byte(delay, byte).await?;
         self.cs.set_high().map_err(Spi3BusError::Cs)
     }
 
     /// Reads a single data byte (DC high), bracketed by its own CS select/unselect pulse.
-    pub fn read_data_byte<DELAY: DelayNs>(
+    pub async fn read_data_byte<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error, u8>
     {
         self.dc.set_high().map_err(Spi3BusError::Dc)?;
         self.cs.set_low().map_err(Spi3BusError::Cs)?;
-        let value = self.read_byte(delay)?;
+        let value = self.read_byte(delay).await?;
         self.cs.set_high().map_err(Spi3BusError::Cs)?;
         Ok(value)
     }
@@ -218,13 +244,13 @@ where
     /// Reads a single byte (DC left as previously set), bracketed by its own CS select/unselect
     /// pulse, without touching DC — used for the bulk OTP-populate loop where DC is already HIGH
     /// and the reference driver never re-sets it per byte.
-    pub fn read_byte_no_dc<DELAY: DelayNs>(
+    pub async fn read_byte_no_dc<DELAY: DelayNs>(
         &mut self,
         delay: &mut DELAY,
     ) -> Spi3BusResult<CS::Error, SCK::Error, DATA::Error, DC::Error, RST::Error, BUSY::Error, u8>
     {
         self.cs.set_low().map_err(Spi3BusError::Cs)?;
-        let value = self.read_byte(delay)?;
+        let value = self.read_byte(delay).await?;
         self.cs.set_high().map_err(Spi3BusError::Cs)?;
         Ok(value)
     }
