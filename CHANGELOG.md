@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-05
+
+### Fixed
+
+- The optional `defmt` feature depended on `defmt = "0.3"`, while every downstream project
+  exercising it (all five hardware-example repos) depends on `defmt = "1.0"` directly. Cargo
+  happily built both major versions side by side, so this compiled — but the `defmt::Format`
+  epdsi derived came from a different, incompatible `defmt` crate instance than the one a
+  consumer's own `info!`/`error!`/`assert!` macros resolve `Format` from, making the feature
+  silently unusable by any real consumer despite compiling cleanly. Bumped to `defmt = "1.0"`
+  to match the ecosystem; no source changes were needed. Non-breaking: `defmt` is optional and
+  gated behind the `defmt` feature, and the derive usage is unchanged.
+
 ## [0.2.0] - 2026-09-05
 
 Phase 5 of the parity remediation plan — the one breaking release. Three changes:
@@ -370,7 +383,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/melastmohican/epdsi/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/melastmohican/epdsi/compare/v0.1.7...v0.2.0
 [0.1.7]: https://github.com/melastmohican/epdsi/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/melastmohican/epdsi/compare/v0.1.5...v0.1.6
