@@ -1,110 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg(feature = "blocking")]
-//! Blocking-only harness; async coverage lives in `tests/async_smoke_tests.rs`.
 //! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
-//! targets library code only.
+//! targets library code only. Dual-mode: runs under both `cargo test` (blocking) and
+//! `cargo test --no-default-features --features graphics` (async) — see `tests/support/mod.rs`.
 
-use core::cell::RefCell;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
-use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation, SpiDevice};
 use epdsi::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SpiRecord {
-    Command(u8),
-    Data(Vec<u8>),
-}
-
-#[derive(Debug)]
-struct RecordingSpiBus {
-    records: RefCell<Vec<SpiRecord>>,
-    dc_state: RefCell<bool>, // false = Low (Command), true = High (Data)
-}
-
-impl RecordingSpiBus {
-    fn new() -> Self {
-        Self {
-            records: RefCell::new(Vec::new()),
-            dc_state: RefCell::new(false),
-        }
-    }
-}
-
-impl SpiErrorType for &RecordingSpiBus {
-    type Error = ErrorKind;
-}
-
-impl SpiDevice for &RecordingSpiBus {
-    fn transaction(&mut self, _operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        let is_data = *self.dc_state.borrow();
-        if is_data {
-            self.records
-                .borrow_mut()
-                .push(SpiRecord::Data(buf.to_vec()));
-        } else {
-            for &byte in buf {
-                self.records.borrow_mut().push(SpiRecord::Command(byte));
-            }
-        }
-        Ok(())
-    }
-}
-
-struct TestDc<'a>(&'a RecordingSpiBus);
-
-impl DigitalErrorType for TestDc<'_> {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for TestDc<'_> {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = false;
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = true;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct DummyPin;
-
-impl DigitalErrorType for DummyPin {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for DummyPin {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl InputPin for DummyPin {
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
-    }
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-}
-
-struct DummyDelay;
-
-impl DelayNs for DummyDelay {
-    fn delay_ns(&mut self, _ns: u32) {}
-    fn delay_us(&mut self, _us: u32) {}
-    fn delay_ms(&mut self, _ms: u32) {}
-}
+mod support;
+use support::*;
 
 #[test]
 fn test_ssd1680_gdem0213b74_panel_dimensions() {
@@ -114,15 +16,21 @@ fn test_ssd1680_gdem0213b74_panel_dimensions() {
     assert_eq!(GxEPD2_213_B74::HEIGHT, 250);
 }
 
-#[test]
-fn test_ssd1680_init_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_init_sequence_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
     let mut delay = DummyDelay;
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
 
     assert_eq!(
@@ -150,9 +58,13 @@ fn test_ssd1680_init_sequence() {
         ]
     );
 }
+epd_test!(test_ssd1680_init_sequence, ssd1680_init_sequence_body);
 
-#[test]
-fn test_ssd1680_write_frame_channel_routing() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_write_frame_channel_routing_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -160,6 +72,7 @@ fn test_ssd1680_write_frame_channel_routing() {
 
     controller
         .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xAA, 0xBB])
+        .await
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
@@ -169,15 +82,23 @@ fn test_ssd1680_write_frame_channel_routing() {
     bus_backend.records.borrow_mut().clear();
     controller
         .write_frame(&mut bus, ColorChannel::RedYellow, &[0xCC])
+        .await
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![SpiRecord::Command(0x26), SpiRecord::Data(vec![0xCC])]
     );
 }
+epd_test!(
+    test_ssd1680_write_frame_channel_routing,
+    ssd1680_write_frame_channel_routing_body
+);
 
-#[test]
-fn test_ssd1680_trigger_refresh_full_and_partial() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_trigger_refresh_full_and_partial_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -186,7 +107,10 @@ fn test_ssd1680_trigger_refresh_full_and_partial() {
     // Full mode (default)
     let mut controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
     assert_eq!(controller.refresh_mode(), Ssd1680RefreshMode::Full);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -206,7 +130,10 @@ fn test_ssd1680_trigger_refresh_full_and_partial() {
     bus_backend.records.borrow_mut().clear();
     let mut controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT)
         .with_refresh_mode(Ssd1680RefreshMode::Partial);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -222,6 +149,10 @@ fn test_ssd1680_trigger_refresh_full_and_partial() {
         ]
     );
 }
+epd_test!(
+    test_ssd1680_trigger_refresh_full_and_partial,
+    ssd1680_trigger_refresh_full_and_partial_body
+);
 
 #[test]
 fn test_ssd1680_gdey0266z90_panel_dimensions() {
@@ -231,15 +162,21 @@ fn test_ssd1680_gdey0266z90_panel_dimensions() {
     assert_eq!(GxEPD2_266c::HEIGHT, 296);
 }
 
-#[test]
-fn test_ssd1680_gdey0266z90_init_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_gdey0266z90_init_sequence_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
     let mut delay = DummyDelay;
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
 
     // Same register set and byte values as GxEPD2_266c::_InitDisplay(); only the ordering of the
@@ -269,9 +206,16 @@ fn test_ssd1680_gdey0266z90_init_sequence() {
         ]
     );
 }
+epd_test!(
+    test_ssd1680_gdey0266z90_init_sequence,
+    ssd1680_gdey0266z90_init_sequence_body
+);
 
-#[test]
-fn test_ssd1680_gdey0266z90_clear_frame_plane_polarity() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_gdey0266z90_clear_frame_plane_polarity_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -289,7 +233,7 @@ fn test_ssd1680_gdey0266z90_clear_frame_plane_polarity() {
         (ColorChannel::RedYellow, 0x00u8, 0x26u8),
     ] {
         bus_backend.records.borrow_mut().clear();
-        driver.clear_frame(channel, fill).unwrap();
+        driver.clear_frame(channel, fill).await.unwrap();
         let records = bus_backend.records.borrow().clone();
 
         assert_eq!(records[0], SpiRecord::Command(expected_cmd));
@@ -306,9 +250,16 @@ fn test_ssd1680_gdey0266z90_clear_frame_plane_polarity() {
         assert!(written.iter().all(|&byte| byte == fill));
     }
 }
+epd_test!(
+    test_ssd1680_gdey0266z90_clear_frame_plane_polarity,
+    ssd1680_gdey0266z90_clear_frame_plane_polarity_body
+);
 
-#[test]
-fn test_ssd1680_trigger_refresh_fast_full_and_base_map() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_trigger_refresh_fast_full_and_base_map_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -318,7 +269,10 @@ fn test_ssd1680_trigger_refresh_fast_full_and_base_map() {
     // ahead of the 0xC7 display update, all inside the SSD1680 power envelope.
     let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT)
         .with_refresh_mode(Ssd168xRefreshMode::FastFull);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -346,7 +300,10 @@ fn test_ssd1680_trigger_refresh_fast_full_and_base_map() {
     bus_backend.records.borrow_mut().clear();
     let mut controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT)
         .with_refresh_mode(Ssd168xRefreshMode::BaseMap);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -362,21 +319,29 @@ fn test_ssd1680_trigger_refresh_fast_full_and_base_map() {
         ]
     );
 }
+epd_test!(
+    test_ssd1680_trigger_refresh_fast_full_and_base_map,
+    ssd1680_trigger_refresh_fast_full_and_base_map_body
+);
 
-#[test]
-fn test_ssd1680_sleep() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_sleep_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
     let mut delay = DummyDelay;
 
-    controller.sleep(&mut bus, &mut delay).unwrap();
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x01])]
     );
 }
+epd_test!(test_ssd1680_sleep, ssd1680_sleep_body);
 
 // --- Characterisation of the init path (plan item 1b) ----------------------------------------
 //
@@ -386,8 +351,11 @@ fn test_ssd1680_sleep() {
 // zero-sized types the controller never holds. The LUT upload turns that absence into a
 // presence for panels that declare a LUT — and must leave it untouched for those that do not.
 
-#[test]
-fn test_ssd1680_init_writes_no_lut_or_vcom_today() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_init_writes_no_lut_or_vcom_today_body() {
     for (width, height) in [
         (GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT),
         (GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT),
@@ -398,7 +366,10 @@ fn test_ssd1680_init_writes_no_lut_or_vcom_today() {
         let mut controller = Ssd1680Controller::new(width, height);
         let mut delay = DummyDelay;
 
-        controller.init_sequence(&mut bus, &mut delay).unwrap();
+        controller
+            .init_sequence(&mut bus, &mut delay)
+            .await
+            .unwrap();
 
         let records = bus_backend.records.borrow().clone();
         for (command, name) in [
@@ -414,37 +385,57 @@ fn test_ssd1680_init_writes_no_lut_or_vcom_today() {
         }
     }
 }
+epd_test!(
+    test_ssd1680_init_writes_no_lut_or_vcom_today,
+    ssd1680_init_writes_no_lut_or_vcom_today_body
+);
 
 // --- Panel config foundation (plan item 2d) --------------------------------------------------
 
-fn record_ssd1680_init(controller: Ssd1680Controller) -> Vec<SpiRecord> {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn record_ssd1680_init(controller: Ssd1680Controller) -> Vec<SpiRecord> {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = controller;
     let mut delay = DummyDelay;
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
     records
 }
 
-#[test]
-fn test_ssd1680_for_panel_is_byte_identical_on_both_panels() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_for_panel_is_byte_identical_on_both_panels_body() {
     assert_eq!(
-        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEM0213B74>()),
+        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEM0213B74>()).await,
         record_ssd1680_init(Ssd1680Controller::new(
             GDEM0213B74::WIDTH,
             GDEM0213B74::HEIGHT
-        )),
+        ))
+        .await,
     );
     assert_eq!(
-        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEY0266Z90>()),
+        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEY0266Z90>()).await,
         record_ssd1680_init(Ssd1680Controller::new(
             GDEY0266Z90::WIDTH,
             GDEY0266Z90::HEIGHT
-        )),
+        ))
+        .await,
     );
 }
+epd_test!(
+    test_ssd1680_for_panel_is_byte_identical_on_both_panels,
+    ssd1680_for_panel_is_byte_identical_on_both_panels_body
+);
 
 #[test]
 fn test_ssd1680_for_panel_carries_the_refresh_mode_builder() {

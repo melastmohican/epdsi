@@ -1,21 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg(feature = "blocking")]
-//! Blocking-only harness; async coverage lives in `tests/async_smoke_tests.rs`.
 //! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
-//! targets library code only.
+//! targets library code only. Dual-mode: runs under both `cargo test` (blocking) and
+//! `cargo test --no-default-features --features graphics` (async) — see `tests/support/mod.rs`.
 
 use core::cell::RefCell;
 use std::collections::VecDeque;
 
-use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
-use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation, SpiDevice};
 use epdsi::prelude::*;
+
+mod support;
+use support::*;
 
 // ---------------------------------------------------------------------------------------------
 // Bit-banged Spi3Bus mock: reconstructs whole bytes from the individual bit-level
 // set_as_output/set_high/set_low/set_as_input/is_high calls Spi3Bus::write_byte/read_byte make,
-// so tests can assert byte-level command/data sequences instead of raw bit toggling.
+// so tests can assert byte-level command/data sequences instead of raw bit toggling. None of
+// these pin/state types are async themselves (`Spi3Bus` needs no `Wait` — see `src/bus3.rs`'s
+// module doc); only the test bodies driving `Spi3Bus`'s own methods need `.await`.
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,13 +214,6 @@ impl InputPin for MockBusyIdle {
     }
 }
 
-struct MockDelay;
-impl DelayNs for MockDelay {
-    fn delay_ns(&mut self, _ns: u32) {}
-    fn delay_us(&mut self, _us: u32) {}
-    fn delay_ms(&mut self, _ms: u32) {}
-}
-
 fn make_bus(
     state: &MockState,
 ) -> Spi3Bus<MockCs<'_>, MockSck<'_>, MockData<'_>, MockDc<'_>, MockRst<'_>, MockBusyIdle> {
@@ -254,14 +249,17 @@ fn test_pervasive_bwry_panel_dimensions() {
     assert_eq!(EPD_417_QS_0A::WIDTH, 400);
 }
 
-#[test]
-fn test_spi3bus_write_cmd_and_data_byte_framing() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn spi3bus_write_cmd_and_data_byte_framing_body() {
     let state = MockState::new(&[]);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
 
-    bus.write_cmd(&mut delay, 0x70).unwrap();
-    bus.write_data(&mut delay, 0xA5).unwrap();
+    bus.write_cmd(&mut delay, 0x70).await.unwrap();
+    bus.write_data(&mut delay, 0xA5).await.unwrap();
 
     assert_eq!(
         state.events.borrow().clone(),
@@ -270,15 +268,22 @@ fn test_spi3bus_write_cmd_and_data_byte_framing() {
     // CS must be deasserted (unselected) after each byte.
     assert!(!*state.cs_low.borrow());
 }
+epd_test!(
+    test_spi3bus_write_cmd_and_data_byte_framing,
+    spi3bus_write_cmd_and_data_byte_framing_body
+);
 
-#[test]
-fn test_spi3bus_read_bytes() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn spi3bus_read_bytes_body() {
     let state = MockState::new(&[0x12, 0x34]);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
 
-    let a = bus.read_data_byte(&mut delay).unwrap();
-    let b = bus.read_byte_no_dc(&mut delay).unwrap();
+    let a = bus.read_data_byte(&mut delay).await.unwrap();
+    let b = bus.read_byte_no_dc(&mut delay).await.unwrap();
 
     assert_eq!(a, 0x12);
     assert_eq!(b, 0x34);
@@ -287,35 +292,53 @@ fn test_spi3bus_read_bytes() {
         vec![Event::read(0x12), Event::read(0x34)]
     );
 }
+epd_test!(test_spi3bus_read_bytes, spi3bus_read_bytes_body);
 
-#[test]
-fn test_pervasive_bwry_chip_id_mismatch() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_chip_id_mismatch_body() {
     let state = MockState::new(&[0x00, 0x01]);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT);
 
-    let err = controller.read_otp(&mut bus, &mut delay).unwrap_err();
+    let err = controller.read_otp(&mut bus, &mut delay).await.unwrap_err();
     assert_eq!(err, PervasiveBwryOtpError::UnexpectedChipId(0x0001));
 }
+epd_test!(
+    test_pervasive_bwry_chip_id_mismatch,
+    pervasive_bwry_chip_id_mismatch_body
+);
 
-#[test]
-fn test_pervasive_bwry_chip_id_normalization() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_chip_id_normalization_body() {
     // 0x8302 raw response must be normalized to 0x0302 before comparison. Checked against
     // DriverA (expects 0x0605) so the mismatch still fires — DriverF's expected id is itself
     // 0x0302, so this same raw response is exercised as part of DriverF's happy-path test below.
     let state = MockState::new(&[0x83, 0x02]);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
 
-    let err = controller.read_otp(&mut bus, &mut delay).unwrap_err();
+    let err = controller.read_otp(&mut bus, &mut delay).await.unwrap_err();
     assert_eq!(err, PervasiveBwryOtpError::UnexpectedChipId(0x0302));
 }
+epd_test!(
+    test_pervasive_bwry_chip_id_normalization,
+    pervasive_bwry_chip_id_normalization_body
+);
 
-#[test]
-fn test_pervasive_bwry_driverf_read_otp_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_driverf_read_otp_sequence_body() {
     let otp = synthetic_otp(48);
     let mut canned = vec![0x03, 0x02]; // chip ID (raw 0x0302, matches DriverF directly)
     canned.push(0xAA); // dummy byte
@@ -323,11 +346,11 @@ fn test_pervasive_bwry_driverf_read_otp_sequence() {
 
     let state = MockState::new(&canned);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverF);
 
-    controller.read_otp(&mut bus, &mut delay).unwrap();
+    controller.read_otp(&mut bus, &mut delay).await.unwrap();
     let events = state.events.borrow().clone();
 
     let mut expected = vec![
@@ -347,24 +370,38 @@ fn test_pervasive_bwry_driverf_read_otp_sequence() {
     }
     assert_eq!(events, expected);
 }
+epd_test!(
+    test_pervasive_bwry_driverf_read_otp_sequence,
+    pervasive_bwry_driverf_read_otp_sequence_body
+);
 
-#[test]
-fn test_pervasive_bwry_driverf_invalid_otp_marker() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_driverf_invalid_otp_marker_body() {
     // Marker byte comes back wrong; DriverF has no retry/fallback and fails immediately.
     let canned = vec![0x03, 0x02, 0xAA, 0x00];
 
     let state = MockState::new(&canned);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverF);
 
-    let err = controller.read_otp(&mut bus, &mut delay).unwrap_err();
+    let err = controller.read_otp(&mut bus, &mut delay).await.unwrap_err();
     assert_eq!(err, PervasiveBwryOtpError::InvalidOtpMarker);
 }
+epd_test!(
+    test_pervasive_bwry_driverf_invalid_otp_marker,
+    pervasive_bwry_driverf_invalid_otp_marker_body
+);
 
-#[test]
-fn test_pervasive_bwry_drivera_read_otp_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_drivera_read_otp_sequence_body() {
     let otp = synthetic_otp(112);
     let mut canned = vec![0x06, 0x05]; // chip ID
     canned.push(0xAA); // dummy
@@ -372,11 +409,11 @@ fn test_pervasive_bwry_drivera_read_otp_sequence() {
 
     let state = MockState::new(&canned);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
 
-    controller.read_otp(&mut bus, &mut delay).unwrap();
+    controller.read_otp(&mut bus, &mut delay).await.unwrap();
     let events = state.events.borrow().clone();
 
     let mut expected = vec![
@@ -397,9 +434,16 @@ fn test_pervasive_bwry_drivera_read_otp_sequence() {
     }
     assert_eq!(events, expected);
 }
+epd_test!(
+    test_pervasive_bwry_drivera_read_otp_sequence,
+    pervasive_bwry_drivera_read_otp_sequence_body
+);
 
-#[test]
-fn test_pervasive_bwry_drivera_bank2_fallback() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_drivera_bank2_fallback_body() {
     let otp = synthetic_otp(112);
     let mut canned = vec![0x06, 0x05]; // chip ID
     canned.push(0xAA); // dummy
@@ -410,125 +454,50 @@ fn test_pervasive_bwry_drivera_bank2_fallback() {
 
     let state = MockState::new(&canned);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
 
-    controller.read_otp(&mut bus, &mut delay).unwrap();
+    controller.read_otp(&mut bus, &mut delay).await.unwrap();
 }
+epd_test!(
+    test_pervasive_bwry_drivera_bank2_fallback,
+    pervasive_bwry_drivera_bank2_fallback_body
+);
 
-#[test]
-fn test_pervasive_bwry_drivera_invalid_otp_marker() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_drivera_invalid_otp_marker_body() {
     let mut canned = vec![0x06, 0x05, 0xAA, 0x00];
     canned.extend(std::iter::repeat(0xFF).take(0x70 - 1));
     canned.push(0x00); // still-bad marker at bank 2
 
     let state = MockState::new(&canned);
     let mut bus = make_bus(&state);
-    let mut delay = MockDelay;
+    let mut delay = DummyDelay;
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
 
-    let err = controller.read_otp(&mut bus, &mut delay).unwrap_err();
+    let err = controller.read_otp(&mut bus, &mut delay).await.unwrap_err();
     assert_eq!(err, PervasiveBwryOtpError::InvalidOtpMarker);
 }
+epd_test!(
+    test_pervasive_bwry_drivera_invalid_otp_marker,
+    pervasive_bwry_drivera_invalid_otp_marker_body
+);
 
 // ---------------------------------------------------------------------------------------------
 // Normal 4-wire SpiBusWrapper-based tests for the EpdController impl (init_sequence, write_frame,
 // trigger_refresh, sleep) — these are unaffected by the bit-banged OTP rewrite above.
 // ---------------------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SpiRecord {
-    Command(u8),
-    Data(Vec<u8>),
-}
-
-#[derive(Debug)]
-struct RecordingSpiBus {
-    records: RefCell<Vec<SpiRecord>>,
-    dc_state: RefCell<bool>,
-}
-
-impl RecordingSpiBus {
-    fn new() -> Self {
-        Self {
-            records: RefCell::new(Vec::new()),
-            dc_state: RefCell::new(false),
-        }
-    }
-}
-
-impl SpiErrorType for &RecordingSpiBus {
-    type Error = ErrorKind;
-}
-
-impl SpiDevice for &RecordingSpiBus {
-    fn transaction(&mut self, _operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        let is_data = *self.dc_state.borrow();
-        if is_data {
-            self.records
-                .borrow_mut()
-                .push(SpiRecord::Data(buf.to_vec()));
-        } else {
-            for &byte in buf {
-                self.records.borrow_mut().push(SpiRecord::Command(byte));
-            }
-        }
-        Ok(())
-    }
-}
-
-struct TestDc<'a>(&'a RecordingSpiBus);
-impl DigitalErrorType for TestDc<'_> {
-    type Error = core::convert::Infallible;
-}
-impl OutputPin for TestDc<'_> {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = false;
-        Ok(())
-    }
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = true;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct DummyPin;
-impl DigitalErrorType for DummyPin {
-    type Error = core::convert::Infallible;
-}
-impl OutputPin for DummyPin {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-impl InputPin for DummyPin {
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
-    }
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-}
-
-struct DummyDelay;
-impl DelayNs for DummyDelay {
-    fn delay_ns(&mut self, _ns: u32) {}
-    fn delay_us(&mut self, _us: u32) {}
-    fn delay_ms(&mut self, _ms: u32) {}
-}
-
-#[test]
-fn test_pervasive_bwry_init_sequence_uses_otp_data() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_init_sequence_uses_otp_data_body() {
     // First, populate otp_data via a mocked bit-banged read_otp (DriverF, happy path).
     let otp = synthetic_otp(48);
     let mut canned = vec![0x03, 0x02, 0xAA];
@@ -539,14 +508,20 @@ fn test_pervasive_bwry_init_sequence_uses_otp_data() {
     let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
         .with_temperature(25)
         .with_variant(PervasiveBwryVariant::DriverF);
-    controller.read_otp(&mut bitbang_bus, &mut delay).unwrap();
+    controller
+        .read_otp(&mut bitbang_bus, &mut delay)
+        .await
+        .unwrap();
 
     // Then run init_sequence over the normal 4-wire SpiBusWrapper and check it uses the
     // OTP-derived register data (not the raw bit-bang bus).
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
 
     assert_eq!(
@@ -589,9 +564,16 @@ fn test_pervasive_bwry_init_sequence_uses_otp_data() {
     );
     assert!(!records.contains(&SpiRecord::Command(0x04)));
 }
+epd_test!(
+    test_pervasive_bwry_init_sequence_uses_otp_data,
+    pervasive_bwry_init_sequence_uses_otp_data_body
+);
 
-#[test]
-fn test_pervasive_bwry_drivera_init_sequence_powers_on() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_drivera_init_sequence_powers_on_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -599,13 +581,23 @@ fn test_pervasive_bwry_drivera_init_sequence_powers_on() {
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
     assert!(records.contains(&SpiRecord::Command(0x04)));
 }
+epd_test!(
+    test_pervasive_bwry_drivera_init_sequence_powers_on,
+    pervasive_bwry_drivera_init_sequence_powers_on_body
+);
 
-#[test]
-fn test_pervasive_bwry_write_frame_and_pattern() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_write_frame_and_pattern_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -613,6 +605,7 @@ fn test_pervasive_bwry_write_frame_and_pattern() {
 
     controller
         .write_frame(&mut bus, ColorChannel::BlackWhite, &[0xAA, 0xBB])
+        .await
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
@@ -622,15 +615,23 @@ fn test_pervasive_bwry_write_frame_and_pattern() {
     bus_backend.records.borrow_mut().clear();
     controller
         .write_frame_pattern(&mut bus, ColorChannel::BlackWhite, 0x11, 4)
+        .await
         .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x11; 4])]
     );
 }
+epd_test!(
+    test_pervasive_bwry_write_frame_and_pattern,
+    pervasive_bwry_write_frame_and_pattern_body
+);
 
-#[test]
-fn test_pervasive_bwry_trigger_refresh_and_sleep() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_trigger_refresh_and_sleep_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -638,7 +639,10 @@ fn test_pervasive_bwry_trigger_refresh_and_sleep() {
 
     let mut controller = PervasiveBwryController::new(E2154QS0F1::WIDTH, E2154QS0F1::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverF);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -648,7 +652,7 @@ fn test_pervasive_bwry_trigger_refresh_and_sleep() {
         ]
     );
     bus_backend.records.borrow_mut().clear();
-    controller.sleep(&mut bus, &mut delay).unwrap();
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
     // DriverF has no additional shutdown command beyond POWER_OFF.
     assert_eq!(
         bus_backend.records.borrow().clone(),
@@ -658,13 +662,16 @@ fn test_pervasive_bwry_trigger_refresh_and_sleep() {
     bus_backend.records.borrow_mut().clear();
     let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
         .with_variant(PervasiveBwryVariant::DriverA);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![SpiRecord::Command(0x12), SpiRecord::Data(vec![0x00])]
     );
     bus_backend.records.borrow_mut().clear();
-    controller.sleep(&mut bus, &mut delay).unwrap();
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -675,3 +682,7 @@ fn test_pervasive_bwry_trigger_refresh_and_sleep() {
         ]
     );
 }
+epd_test!(
+    test_pervasive_bwry_trigger_refresh_and_sleep,
+    pervasive_bwry_trigger_refresh_and_sleep_body
+);

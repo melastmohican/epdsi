@@ -1,114 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg(feature = "blocking")]
-//! Blocking-only harness; async coverage lives in `tests/async_smoke_tests.rs`.
 //! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
-//! targets library code only.
+//! targets library code only. Dual-mode: runs under both `cargo test` (blocking) and
+//! `cargo test --no-default-features --features graphics` (async) — see `tests/support/mod.rs`.
 
 //! Unit and mock bus parity tests for SSD1681 E-Paper Display Controller.
 
-use core::cell::RefCell;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
-use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation, SpiDevice};
 use epdsi::controllers::ssd168x::{cmd, Ssd1681Controller, Ssd1681RefreshMode};
 use epdsi::panels::GDEM0154Z90;
 use epdsi::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SpiRecord {
-    Command(u8),
-    Data(Vec<u8>),
-}
-
-#[derive(Debug)]
-struct RecordingSpiBus {
-    records: RefCell<Vec<SpiRecord>>,
-    dc_state: RefCell<bool>,
-}
-
-impl RecordingSpiBus {
-    fn new() -> Self {
-        Self {
-            records: RefCell::new(Vec::new()),
-            dc_state: RefCell::new(false),
-        }
-    }
-}
-
-impl SpiErrorType for &RecordingSpiBus {
-    type Error = ErrorKind;
-}
-
-impl SpiDevice for &RecordingSpiBus {
-    fn transaction(&mut self, _operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        let is_data = *self.dc_state.borrow();
-        if is_data {
-            self.records
-                .borrow_mut()
-                .push(SpiRecord::Data(buf.to_vec()));
-        } else {
-            for &byte in buf {
-                self.records.borrow_mut().push(SpiRecord::Command(byte));
-            }
-        }
-        Ok(())
-    }
-}
-
-struct TestDc<'a>(&'a RecordingSpiBus);
-
-impl DigitalErrorType for TestDc<'_> {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for TestDc<'_> {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = false;
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = true;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct DummyPin;
-
-impl DigitalErrorType for DummyPin {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for DummyPin {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl InputPin for DummyPin {
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
-    }
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-}
-
-struct DummyDelay;
-
-impl DelayNs for DummyDelay {
-    fn delay_ns(&mut self, _ns: u32) {}
-    fn delay_us(&mut self, _us: u32) {}
-    fn delay_ms(&mut self, _ms: u32) {}
-}
+mod support;
+use support::*;
 
 #[test]
 fn test_ssd1681_gdem0154z90_panel_dimensions() {
@@ -129,8 +31,11 @@ fn test_ssd1681_refresh_modes() {
     assert_eq!(controller2.refresh_mode(), Ssd1681RefreshMode::Partial);
 }
 
-#[test]
-fn test_ssd1681_trigger_refresh_full_and_partial() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_trigger_refresh_full_and_partial_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -138,7 +43,10 @@ fn test_ssd1681_trigger_refresh_full_and_partial() {
     let mut delay = DummyDelay;
 
     // Full refresh (0xF7)
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
     assert!(records.contains(&SpiRecord::Command(cmd::UPDATE_DISPLAY_CTRL2)));
     assert!(records.contains(&SpiRecord::Data(vec![0xF7])));
@@ -148,12 +56,19 @@ fn test_ssd1681_trigger_refresh_full_and_partial() {
 
     // Partial refresh (0xFC)
     controller.set_refresh_mode(Ssd1681RefreshMode::Partial);
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
     assert!(records.contains(&SpiRecord::Command(cmd::UPDATE_DISPLAY_CTRL2)));
     assert!(records.contains(&SpiRecord::Data(vec![0xFC])));
     assert!(records.contains(&SpiRecord::Command(cmd::MASTER_ACTIVATE)));
 }
+epd_test!(
+    test_ssd1681_trigger_refresh_full_and_partial,
+    ssd1681_trigger_refresh_full_and_partial_body
+);
 
 // --- Characterisation of the init path (plan item 1b) ----------------------------------------
 //
@@ -161,15 +76,21 @@ fn test_ssd1681_trigger_refresh_full_and_partial() {
 // coming LUT-upload change provable: a panel declaring no LUT must emit exactly this stream
 // afterwards, with the `0x32` write appearing only for panels that declare one.
 
-#[test]
-fn test_ssd1681_init_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_init_sequence_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
     let mut delay = DummyDelay;
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
 
     assert_eq!(
         bus_backend.records.borrow().clone(),
@@ -195,9 +116,13 @@ fn test_ssd1681_init_sequence() {
         ]
     );
 }
+epd_test!(test_ssd1681_init_sequence, ssd1681_init_sequence_body);
 
-#[test]
-fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_init_writes_no_lut_or_vcom_today_body() {
     // No panel-declared configuration reaches the wire through `new()`. `for_panel()` is the
     // opt-in that can add some — and only for a panel that declares it, which GDEM0154Z90
     // deliberately does not.
@@ -207,7 +132,10 @@ fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
     let mut controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
     let mut delay = DummyDelay;
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
 
     let records = bus_backend.records.borrow().clone();
     assert!(
@@ -223,6 +151,10 @@ fn test_ssd1681_init_writes_no_lut_or_vcom_today() {
         "gate voltage register is never written today"
     );
 }
+epd_test!(
+    test_ssd1681_init_writes_no_lut_or_vcom_today,
+    ssd1681_init_writes_no_lut_or_vcom_today_body
+);
 
 // --- Panel config foundation (plan item 2d) --------------------------------------------------
 
@@ -242,52 +174,77 @@ impl EpdPanel for ConfiguredTestPanel {
     const CUSTOM_LUT: Option<&'static [u8]> = Some(TEST_LUT);
 }
 
-fn record_init(controller: Ssd1681Controller) -> Vec<SpiRecord> {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn record_init(controller: Ssd1681Controller) -> Vec<SpiRecord> {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = controller;
     let mut delay = DummyDelay;
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
     records
 }
 
-#[test]
-fn test_ssd1681_for_panel_is_byte_identical_when_the_panel_declares_nothing() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_for_panel_is_byte_identical_when_the_panel_declares_nothing_body() {
     // The assertion that makes Phase 2 safe to ship without touching hardware: adopting
     // `for_panel` on any currently-shipping panel changes not one byte on the wire.
     assert_eq!(
-        record_init(Ssd1681Controller::for_panel::<GDEM0154Z90>()),
+        record_init(Ssd1681Controller::for_panel::<GDEM0154Z90>()).await,
         record_init(Ssd1681Controller::new(
             GDEM0154Z90::WIDTH,
             GDEM0154Z90::HEIGHT
-        )),
+        ))
+        .await,
     );
 }
+epd_test!(
+    test_ssd1681_for_panel_is_byte_identical_when_the_panel_declares_nothing,
+    ssd1681_for_panel_is_byte_identical_when_the_panel_declares_nothing_body
+);
 
-#[test]
-fn test_ssd1681_for_panel_reads_dimensions_off_the_panel() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_for_panel_reads_dimensions_off_the_panel_body() {
     let controller = Ssd1681Controller::for_panel::<GDEM0154Z90>();
     assert_eq!(controller.vcom(), None);
     assert_eq!(controller.gate_voltage(), None);
     assert_eq!(controller.custom_lut(), None);
 
     // Same gate-height byte as the hand-wired `new(200, 200)` form.
-    let records = record_init(controller);
+    let records = record_init(controller).await;
     assert_eq!(records[1], SpiRecord::Command(0x01));
     assert_eq!(records[2], SpiRecord::Data(vec![0xC7, 0x00, 0x00]));
 }
+epd_test!(
+    test_ssd1681_for_panel_reads_dimensions_off_the_panel,
+    ssd1681_for_panel_reads_dimensions_off_the_panel_body
+);
 
-#[test]
-fn test_ssd1681_declared_config_reaches_the_wire_in_reference_order() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_declared_config_reaches_the_wire_in_reference_order_body() {
     let controller = Ssd1681Controller::for_panel::<ConfiguredTestPanel>();
     assert_eq!(controller.vcom(), Some(0x36));
     assert_eq!(controller.gate_voltage(), Some(0x17));
     assert_eq!(controller.custom_lut(), Some(TEST_LUT));
 
     assert_eq!(
-        record_init(controller),
+        record_init(controller).await,
         vec![
             SpiRecord::Command(0x12), // SW_RESET
             SpiRecord::Command(0x01), // DRIVER_CONTROL
@@ -318,15 +275,23 @@ fn test_ssd1681_declared_config_reaches_the_wire_in_reference_order() {
         ]
     );
 }
+epd_test!(
+    test_ssd1681_declared_config_reaches_the_wire_in_reference_order,
+    ssd1681_declared_config_reaches_the_wire_in_reference_order_body
+);
 
-#[test]
-fn test_ssd1681_builders_are_independent() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_builders_are_independent_body() {
     // Each override is omitted on its own, not all-or-nothing.
     let records = record_init(
         Ssd1681Controller::new(200, 200)
             .with_gate_voltage(Some(0x17))
             .with_vcom(None),
-    );
+    )
+    .await;
     assert!(!records.contains(&SpiRecord::Command(0x2C)));
     assert!(!records.contains(&SpiRecord::Command(0x32)));
     let idx = records
@@ -335,3 +300,7 @@ fn test_ssd1681_builders_are_independent() {
         .expect("gate voltage was configured, so it must be written");
     assert_eq!(records[idx + 1], SpiRecord::Data(vec![0x17]));
 }
+epd_test!(
+    test_ssd1681_builders_are_independent,
+    ssd1681_builders_are_independent_body
+);

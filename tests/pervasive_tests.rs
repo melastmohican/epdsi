@@ -1,110 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg(feature = "blocking")]
-//! Blocking-only harness; async coverage lives in `tests/async_smoke_tests.rs`.
 //! Test assertions are allowed to panic; the deny-by-default policy in `Cargo.toml`
-//! targets library code only.
+//! targets library code only. Dual-mode: runs under both `cargo test` (blocking) and
+//! `cargo test --no-default-features --features graphics` (async) — see `tests/support/mod.rs`.
 
-use core::cell::RefCell;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
-use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation, SpiDevice};
 use epdsi::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SpiRecord {
-    Command(u8),
-    Data(Vec<u8>),
-}
-
-#[derive(Debug)]
-struct RecordingSpiBus {
-    records: RefCell<Vec<SpiRecord>>,
-    dc_state: RefCell<bool>, // false = Low (Command), true = High (Data)
-}
-
-impl RecordingSpiBus {
-    fn new() -> Self {
-        Self {
-            records: RefCell::new(Vec::new()),
-            dc_state: RefCell::new(false),
-        }
-    }
-}
-
-impl SpiErrorType for &RecordingSpiBus {
-    type Error = ErrorKind;
-}
-
-impl SpiDevice for &RecordingSpiBus {
-    fn transaction(&mut self, _operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        let is_data = *self.dc_state.borrow();
-        if is_data {
-            self.records
-                .borrow_mut()
-                .push(SpiRecord::Data(buf.to_vec()));
-        } else {
-            for &byte in buf {
-                self.records.borrow_mut().push(SpiRecord::Command(byte));
-            }
-        }
-        Ok(())
-    }
-}
-
-struct TestDc<'a>(&'a RecordingSpiBus);
-
-impl DigitalErrorType for TestDc<'_> {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for TestDc<'_> {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = false;
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        *self.0.dc_state.borrow_mut() = true;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct DummyPin;
-
-impl DigitalErrorType for DummyPin {
-    type Error = core::convert::Infallible;
-}
-
-impl OutputPin for DummyPin {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl InputPin for DummyPin {
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
-    }
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-}
-
-struct DummyDelay;
-
-impl DelayNs for DummyDelay {
-    fn delay_ns(&mut self, _ns: u32) {}
-    fn delay_us(&mut self, _us: u32) {}
-    fn delay_ms(&mut self, _ms: u32) {}
-}
+mod support;
+use support::*;
 
 #[test]
 fn test_pervasive_controller_configuration() {
@@ -124,8 +26,11 @@ fn test_pervasive_controller_configuration() {
     assert_eq!(controller_mut.refresh_mode(), PervasiveRefreshMode::Normal);
 }
 
-#[test]
-fn test_pervasive_refresh_and_sleep_command_payload_parity() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_refresh_and_sleep_command_payload_parity_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -134,7 +39,10 @@ fn test_pervasive_refresh_and_sleep_command_payload_parity() {
 
     // Test trigger_refresh
     bus_backend.records.borrow_mut().clear();
-    controller.trigger_refresh(&mut bus, &mut delay).unwrap();
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
 
     let records = bus_backend.records.borrow().clone();
     assert_eq!(
@@ -147,7 +55,7 @@ fn test_pervasive_refresh_and_sleep_command_payload_parity() {
 
     // Test sleep
     bus_backend.records.borrow_mut().clear();
-    controller.sleep(&mut bus, &mut delay).unwrap();
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
 
     let records = bus_backend.records.borrow().clone();
     assert_eq!(
@@ -157,9 +65,16 @@ fn test_pervasive_refresh_and_sleep_command_payload_parity() {
         ]
     );
 }
+epd_test!(
+    test_pervasive_refresh_and_sleep_command_payload_parity,
+    pervasive_refresh_and_sleep_command_payload_parity_body
+);
 
-#[test]
-fn test_pervasive_init_sequence_normal_vs_fast() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_init_sequence_normal_vs_fast_body() {
     // Normal mode init sequence
     {
         let bus_backend = RecordingSpiBus::new();
@@ -168,7 +83,10 @@ fn test_pervasive_init_sequence_normal_vs_fast() {
         let mut controller = PervasiveBwController::new(152, 296).with_temperature(25);
         let mut delay = DummyDelay;
 
-        controller.init_sequence(&mut bus, &mut delay).unwrap();
+        controller
+            .init_sequence(&mut bus, &mut delay)
+            .await
+            .unwrap();
         let records = bus_backend.records.borrow().clone();
 
         assert_eq!(
@@ -196,7 +114,10 @@ fn test_pervasive_init_sequence_normal_vs_fast() {
             .with_refresh_mode(PervasiveRefreshMode::Fast);
         let mut delay = DummyDelay;
 
-        controller.init_sequence(&mut bus, &mut delay).unwrap();
+        controller
+            .init_sequence(&mut bus, &mut delay)
+            .await
+            .unwrap();
         let records = bus_backend.records.borrow().clone();
 
         assert_eq!(
@@ -216,9 +137,16 @@ fn test_pervasive_init_sequence_normal_vs_fast() {
         );
     }
 }
+epd_test!(
+    test_pervasive_init_sequence_normal_vs_fast,
+    pervasive_init_sequence_normal_vs_fast_body
+);
 
-#[test]
-fn test_pervasive_write_frame_and_fast_frame() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_write_frame_and_fast_frame_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -227,6 +155,7 @@ fn test_pervasive_write_frame_and_fast_frame() {
     let frame_data = [0xAA; 4];
     controller
         .write_frame(&mut bus, ColorChannel::BlackWhite, &frame_data)
+        .await
         .unwrap();
 
     let records = bus_backend.records.borrow().clone();
@@ -246,6 +175,7 @@ fn test_pervasive_write_frame_and_fast_frame() {
     let curr_frame = [0x00; 4];
     controller
         .write_fast_frame(&mut bus, &prev_frame, &curr_frame)
+        .await
         .unwrap();
 
     let records = bus_backend.records.borrow().clone();
@@ -263,9 +193,16 @@ fn test_pervasive_write_frame_and_fast_frame() {
         ]
     );
 }
+epd_test!(
+    test_pervasive_write_frame_and_fast_frame,
+    pervasive_write_frame_and_fast_frame_body
+);
 
-#[test]
-fn test_pervasive_driver_f_e2290ks0f1_init_sequence() {
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_driver_f_e2290ks0f1_init_sequence_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
@@ -279,7 +216,10 @@ fn test_pervasive_driver_f_e2290ks0f1_init_sequence() {
     assert_eq!(EPD_266_KS_0C::WIDTH, 152);
     assert_eq!(EPD_266_KS_0C::HEIGHT, 296);
 
-    controller.init_sequence(&mut bus, &mut delay).unwrap();
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
     let records = bus_backend.records.borrow().clone();
 
     assert_eq!(
@@ -298,3 +238,7 @@ fn test_pervasive_driver_f_e2290ks0f1_init_sequence() {
         ]
     );
 }
+epd_test!(
+    test_pervasive_driver_f_e2290ks0f1_init_sequence,
+    pervasive_driver_f_e2290ks0f1_init_sequence_body
+);
