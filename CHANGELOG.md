@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Phase 5 of the parity remediation plan — the one breaking release. Three changes:
 
+Every panel across both APIs has been flashed and hardware-verified before this release: three
+blocking hosts (RP2350 `rust-rpico2-discovery`, Feather RP2040 `adafruit-feather-thinkink-discovery`,
+XIAO ESP32-C3 `xiao-esp32c3-blinky`) and two async hosts (RP2350 `rust-rpico2-embassy-examples`,
+XIAO ESP32-S3 `rust-reterminal-e1002-examples`), covering all eleven panels this crate ships a
+controller for, including the four Pervasive Displays panels on the EXT3-1 extension board. The
+XIAO ESP32-C3 module used for the 0.1.4/0.1.5 bring-up was found to be faulty (see that entry
+below); a replacement module now runs every non-Pervasive panel cleanly, matching RP2350/RP2040
+timings — see the README's "A different microcontroller" section for the resolved writeup. See the
+README's "Examples on real hardware" table for the full per-panel, per-host verification matrix.
+
 ### Added
 
 - An async API via `embedded-hal-async`, alongside the existing blocking one. Controlled by the

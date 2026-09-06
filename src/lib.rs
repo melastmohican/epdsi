@@ -150,9 +150,13 @@
 //!
 //! # Complete examples
 //!
-//! Runnable, flashable programs for every supported controller live in
-//! [`rust-rpico2-discovery`] (RP2350 Pico 2, `rp-hal`) and
-//! [`rust-reterminal-e1002-examples`] (XIAO ESP32-S3, Embassy + `esp-hal`).
+//! Runnable, flashable programs for every supported controller are verified across three
+//! blocking hosts — [`rust-rpico2-discovery`] (RP2350 Pico 2, `rp-hal`),
+//! `adafruit-feather-thinkink-discovery` (Feather RP2040 ThinkInk, `rp-hal`), and
+//! `xiao-esp32c3-blinky` (XIAO ESP32-C3, `esp-hal`) — and two async hosts —
+//! `rust-rpico2-embassy-examples` (RP2350 Pico 2, Embassy + `embassy-rp`) and
+//! [`rust-reterminal-e1002-examples`] (XIAO ESP32-S3, Embassy + `esp-hal`). See the README's
+//! "Examples on real hardware" section for the full per-panel verification table and links.
 //!
 //! The minimum supported Rust version is 1.75.
 //!

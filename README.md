@@ -338,38 +338,48 @@ epd.sleep(&mut delay).unwrap();
 ## Examples on real hardware
 
 The snippets above are `rust,ignore` because they need real SPI and GPIO. For complete,
-flashable programs covering every supported controller, see:
+flashable programs covering every supported controller, see, grouped by API:
 
-- [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal`, blocking (Cortex-M33)
-- [`adafruit-feather-thinkink-discovery`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery) — Adafruit Feather RP2040 ThinkInk, `rp-hal` via BSP, blocking (Cortex-M0+). Panels seat directly in the board's 24-pin FPC socket, so there is no carrier or jumper wiring
-- [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal`, async (Xtensa)
-- [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky) — Seeed XIAO ESP32-C3 on the ePaper Driver Board for XIAO, `esp-hal`, blocking (RISC-V). **Bring-up in progress**: the module used for that work was later found to be faulty, so its board-specific findings are being re-tested
+**Blocking** (`blocking` feature, on by default):
 
-| Example | Controller | Panel | Board |
+- [`rust-rpico2-discovery`](https://github.com/melastmohican/rust-rpico2-discovery) — RP2350 Pico 2, `rp-hal` (Cortex-M33)
+- [`adafruit-feather-thinkink-discovery`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery) — Adafruit Feather RP2040 ThinkInk, `rp-hal` via BSP (Cortex-M0+). Panels seat directly in the board's 24-pin FPC socket, so there is no carrier or jumper wiring
+- [`xiao-esp32c3-blinky`](https://github.com/melastmohican/xiao-esp32c3-blinky) — Seeed XIAO ESP32-C3 on the ePaper Driver Board for XIAO, `esp-hal` (RISC-V)
+
+**Async** (`default-features = false, features = ["graphics"]`):
+
+- [`rust-rpico2-embassy-examples`](https://github.com/melastmohican/rust-rpico2-embassy-examples) — RP2350 Pico 2, Embassy + `embassy-rp` (Cortex-M33) — same board as `rust-rpico2-discovery`, async twins of every example there
+- [`rust-reterminal-e1002-examples`](https://github.com/melastmohican/rust-reterminal-e1002-examples) — Seeed reTerminal E1002 (XIAO ESP32-S3), Embassy + `esp-hal` (Xtensa)
+
+Every panel below has been flashed and hardware-verified on every host listed for it, blocking and
+async producing the same on-panel result from the same driver code:
+
+| Controller | Panel | Verified blocking | Verified async |
 | :--- | :--- | :--- | :--- |
-| [`ssd1681_gdem0154z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `Ssd1681Controller` | `GDEM0154Z90` — 1.54" Tri-Color | RP2350 |
-| [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2350 |
-| [`ssd1680_gdey0266z90_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `Ssd1680Controller` | `GDEY0266Z90` — 2.66" Tri-Color | RP2350 |
-| [`ssd1680_gdem0213b74_epd.rs`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `Ssd1680Controller` | `GDEM0213B74` — 2.13" Mono | RP2040 |
-| [`ssd1680_gdey0266z90_epd.rs`](https://github.com/melastmohican/adafruit-feather-thinkink-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `Ssd1680Controller` | `GDEY0266Z90` — 2.66" Tri-Color | RP2040 |
-| [`jd79661_zjy122250_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `Jd79661Controller` | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350 |
-| [`uc8253_gdey037t03_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `Uc8253Controller` | `GDEY037T03` — 3.7" Mono | RP2350 |
-| [`uc8253_se0352n14_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) | `Uc8253Controller` (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350 |
-| [`ssd1677_gdeq0426t82_epd.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `Ssd1677Controller` | `GDEQ0426T82` — 4.26" Mono | RP2350 |
-| [`pdi_e2266ks0c1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) | `PervasiveBwController` (Driver C) | `E2266KS0C1` — 2.66" Mono | RP2350 |
-| [`pdi_e2290ks0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) | `PervasiveBwController` (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 |
-| [`pdi_e2154qs0f1.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) | `PervasiveBwryController` (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 | RP2350 |
-| [`pdi_e2417qs0a3.rs`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2417qs0a3.rs) | `PervasiveBwryController` (Driver A) | `E2417QS0A3` — 4.2" Spectra-4 | RP2350 |
-| [`epd_ed2208_demo.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_demo.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" Spectra 6 | ESP32-S3 |
-| [`epd_ed2208_bmp.rs`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_bmp.rs) | `Ed2208Controller` | `GDEP073E01` — 7.3" Spectra 6, BMP rendering | ESP32-S3 |
+| [`Ssd1681Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `GDEM0154Z90` — 1.54" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `GDEM0213B74` — 2.13" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `GDEY0266Z90` — 2.66" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Jd79661Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `GDEY037T03` — 3.7" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1677Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `GDEQ0426T82` — 4.26" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) (Driver C) | `E2266KS0C1` — 2.66" Mono | RP2350 | RP2350 |
+| [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 | RP2350 |
+| [`PervasiveBwryController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 | RP2350 | RP2350 |
+| [`PervasiveBwryController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2417qs0a3.rs) (Driver A) | `E2417QS0A3` — 4.2" Spectra-4 | RP2350 | RP2350 |
+| [`Ed2208Controller`](https://github.com/melastmohican/rust-reterminal-e1002-examples/blob/main/examples/epd_ed2208_demo.rs) | `GDEP073E01` — 7.3" Spectra 6 | — | ESP32-S3 |
 
-Every supported controller has a working example, verified on hardware.
+Every supported controller has a working example, verified on hardware, in both APIs where the
+panel's example has an async counterpart. The `Ed2208Controller`/`GDEP073E01` examples ship
+async-only in `rust-reterminal-e1002-examples` — that repo already runs an Embassy executor, so its
+examples were converted in place rather than kept as a separate blocking pair.
 
-The table lists at least one example per controller; the sibling repositories port several of them
-to other hosts, keeping everything above `main()` byte-identical to the RP2350 originals so that
-only board bring-up differs. That is the point of the `EpdPanel` / `EpdController` /
-`SpiBusWrapper` split: the same driver code runs unchanged across **Cortex-M0+, Cortex-M33, RISC-V
-and Xtensa**, under two HAL families and both blocking and async executors.
+The Pervasive Displays panels (`E2266KS0C1`, `E2290KS0F1`, `E2154QS0F1`, `E2417QS0A3`) need the
+EXT3-1 extension board and are RP2350-only for now; the other seven panels are exercised across
+three blocking hosts and two async hosts, keeping everything above `main()` byte-identical to the
+RP2350 originals so that only board bring-up differs. That is the point of the `EpdPanel` /
+`EpdController` / `SpiBusWrapper` split: the same driver code runs unchanged across **Cortex-M0+,
+Cortex-M33, RISC-V and Xtensa**, under two HAL families and both blocking and async executors.
 
 That portability is also a measurement, not just a claim. The `GDEM0213B74` on an SSD1680 gives a
 3894 ms full refresh and 1018 ms differential partial on RP2350, and 3893 / 1017 ms on a Feather
@@ -441,8 +451,8 @@ rather than returning an error. If a panel needs a non-default variant, its modu
 
 The same driver code runs across Cortex-M0+, Cortex-M33, RISC-V and Xtensa. When a panel works on
 one board and not another, the difference has consistently been **timing, power, or the board
-itself — not logic**. Real examples from this project, all found on one ESP32-C3 and none of which
-reproduced on RP2350:
+itself — not logic**. Real, resolved examples from this project, all found on one XIAO ESP32-C3
+and none of which reproduced on RP2350:
 
 - The controller dropped its charge pump after an update, so the next bare refresh was silently
   ignored — BUSY never asserted, the poll read idle, and `refresh` returned in 0 ms having drawn
@@ -454,20 +464,24 @@ reproduced on RP2350:
 - The reset pulse was 2 ms, matching the vendor driver, and latched only intermittently. Now 30 ms.
 
 **That module was later found to be faulty**, by substitution: a different MCU ran clean on the
-same carrier, cable and panel. All three changes are kept because each is independently justified
-by a vendor reference rather than only by those symptoms — but the episode is the lesson. Symptoms
-chased on a single board can be the board.
+same carrier, cable and panel. All three fixes above are kept regardless — each is independently
+justified by a vendor reference, not only by those symptoms — but the misdiagnosis is the lesson:
+symptoms chased on a single board can be the board, not the platform. A replacement XIAO ESP32-C3
+module has since run every non-Pervasive panel (`GDEM0154Z90`, `GDEM0213B74`, `GDEY0266Z90`,
+`ZJY122250_0213AJH_E5`, `GDEY037T03`, `SE0352N14TNGA0`, `GDEQ0426T82`) cleanly, so treat the
+ESP32-C3 itself as a fully supported host, not a risk — the fault was one unit.
 
 So the method matters more than the list above: **run one identical diagnostic on a second host.**
 If the code is the same and only the host differs, a discrepancy localises to the host. Worked
-example, all on one 2.13" panel and one driver build:
+example from that bring-up, all on one 2.13" panel and one driver build, kept as a record of what
+a faulty host actually looks like in the data rather than in a hunch:
 
 | Host | Full refresh | Differential partial |
 | :--- | ---: | ---: |
 | RP2350 | 3894 ms | 1018 ms |
 | Feather RP2040 | 3893 ms | 1017 ms |
 | ESP32-C3, healthy | ~3891 ms | ~1017 ms |
-| ESP32-C3, faulty module | 7450 ms | 98 ms |
+| ESP32-C3, faulty module (since replaced) | 7450 ms | 98 ms |
 
 Two healthy hosts agreeing to a millisecond, and one host deviating in *both* directions at once,
 is not a driver result. Note the shape of the bad row: too slow **and** too fast. A uniform stretch
