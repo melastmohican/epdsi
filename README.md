@@ -81,9 +81,14 @@ Add `epdsi` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-epdsi = "0.1.0"
+epdsi = "0.2"
 embedded-graphics = "0.8"
 ```
+
+**0.2.0 is a breaking release** (`EpdBusError` gains variants and is now `#[non_exhaustive]`,
+`EpdController::Error` requires `From<ValidationError>`, and the three `EpdPanel` methods
+deprecated since 0.1.6 are removed) alongside the new async API below — see the
+[CHANGELOG](CHANGELOG.md#020---2026-09-05) for the full list before upgrading from 0.1.x.
 
 ### Cargo features
 

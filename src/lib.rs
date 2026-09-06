@@ -1,7 +1,8 @@
 //! # `epdsi` — E-Paper Display Serial Interface Framework
 //!
 //! A `no_std`, [`embedded-hal`] 1.0 compatible driver framework for Electronic Paper
-//! Displays (EPDs), covering seven driver ICs and twelve panels behind one API.
+//! Displays (EPDs), covering seven driver ICs and twelve panels behind one API — blocking or
+//! async, see the "Cargo features" section below.
 //!
 //! Most EPD crates bind one driver IC to one panel. `epdsi` separates the two, so adding
 //! a panel to an existing controller is a single new file, and adding a controller does

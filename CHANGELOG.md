@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-05
+
 Phase 5 of the parity remediation plan — the one breaking release. Three changes:
 
 Every panel across both APIs has been flashed and hardware-verified before this release: three
@@ -368,7 +370,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/melastmohican/epdsi/compare/v0.1.7...v0.2.0
 [0.1.7]: https://github.com/melastmohican/epdsi/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/melastmohican/epdsi/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/melastmohican/epdsi/compare/v0.1.4...v0.1.5
