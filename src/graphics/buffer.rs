@@ -187,6 +187,56 @@ impl PixelColor for TriColor {
     type Raw = ();
 }
 
+/// Which raw RAM bit means "ink" on each of a Tri-Color panel's two planes.
+///
+/// Panels genuinely disagree here, which is why this is a required constructor argument rather
+/// than a hardcoded assumption — the single most common porting mistake on these panels (see the
+/// `epdsi` hardware examples' "ink polarity" notes) is assuming one panel's convention applies to
+/// another's.
+///
+/// - **SSD1680 / SSD1681** (`GDEY0266Z90`, `GDEM0154Z90`): the Black/White plane is normal — a
+///   *cleared* bit is black — but the accent plane is inverted: a **set** bit is red/yellow.
+///   Use [`Self::SSD168X`].
+/// - **UC8253** (`SE0352N14TNGA0`): *both* planes are inverted — a set bit is ink on either one.
+///   Use [`Self::UC8253`].
+///
+/// Getting this backwards does not error; it silently paints the background in ink and the
+/// intended content in background, on hardware, which is why it is worth pinning as a named
+/// constant per controller rather than four bare booleans scattered through call sites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlanePolarity {
+    /// `true` if a *set* bit (rather than a cleared one) means black ink on the Black/White plane.
+    pub bw_ink_is_set_bit: bool,
+    /// `true` if a *set* bit (rather than a cleared one) means accent ink on the second plane.
+    pub accent_ink_is_set_bit: bool,
+}
+
+impl PlanePolarity {
+    /// The SSD1680/SSD1681 Tri-Color convention: Black/White plane normal, accent plane inverted.
+    /// Verified on hardware against `GDEY0266Z90` and `GDEM0154Z90`.
+    pub const SSD168X: Self = Self {
+        bw_ink_is_set_bit: false,
+        accent_ink_is_set_bit: true,
+    };
+
+    /// The UC8253 convention: both planes inverted. Verified on hardware against `SE0352N14TNGA0`.
+    pub const UC8253: Self = Self {
+        bw_ink_is_set_bit: true,
+        accent_ink_is_set_bit: true,
+    };
+
+    /// The background (non-ink) fill byte for the Black/White plane under this polarity —
+    /// `0xFF` if ink is the cleared bit, `0x00` if ink is the set bit.
+    pub const fn bw_background_byte(&self) -> u8 {
+        if self.bw_ink_is_set_bit { 0x00 } else { 0xFF }
+    }
+
+    /// The background (non-ink) fill byte for the accent plane under this polarity.
+    pub const fn accent_background_byte(&self) -> u8 {
+        if self.accent_ink_is_set_bit { 0x00 } else { 0xFF }
+    }
+}
+
 /// A pair of [`PageBuffer`]s addressing a Tri-Color panel's Black/White and accent (red/yellow)
 /// RAM planes together as one `DrawTarget<Color = TriColor>`. One `embedded-graphics` draw call
 /// routes each pixel to the correct plane, instead of needing two separate [`render_paged`]
@@ -196,21 +246,27 @@ impl PixelColor for TriColor {
 pub struct PageBufferPair<'a> {
     bw: PageBuffer<'a>,
     accent: PageBuffer<'a>,
+    polarity: PlanePolarity,
 }
 
 impl<'a> PageBufferPair<'a> {
     /// Creates a new `PageBufferPair` wrapping the Black/White and accent plane buffers for one
     /// page. Both buffers must be at least `width.div_ceil(8) * height` bytes long.
+    ///
+    /// `polarity` must match the panel's actual RAM plane behavior — see [`PlanePolarity`]'s
+    /// docs for the two conventions `epdsi` ships panels for.
     pub fn new(
         bw_buffer: &'a mut [u8],
         accent_buffer: &'a mut [u8],
         width: u32,
         height: u32,
         y_offset: u32,
+        polarity: PlanePolarity,
     ) -> Self {
         Self {
             bw: PageBuffer::new(bw_buffer, width, height, y_offset),
             accent: PageBuffer::new(accent_buffer, width, height, y_offset),
+            polarity,
         }
     }
 
@@ -238,22 +294,21 @@ impl<'a> PageBufferPair<'a> {
     /// Sets one pixel to `color`, clearing the plane `color` does not use so a pixel redrawn
     /// with a different color does not leave a stale bit behind on the other plane.
     ///
-    /// Coordinate (x, y) is in absolute display space, same as [`PageBuffer::set_pixel`].
+    /// Coordinate (x, y) is in absolute display space, same as [`PageBuffer::set_pixel`]. The
+    /// raw bit written on each plane is derived from `color` together with the `polarity` this
+    /// pair was constructed with — [`PageBuffer::set_pixel`]'s own `black` argument means
+    /// "clear the bit," so it is only equal to "this plane's ink" when that plane's ink is *not*
+    /// the set bit; the `!=` below is exactly that XOR.
     pub fn set_pixel(&mut self, x: u32, y: u32, color: TriColor) {
-        match color {
-            TriColor::White => {
-                self.bw.set_pixel(x, y, false);
-                self.accent.set_pixel(x, y, false);
-            }
-            TriColor::Black => {
-                self.bw.set_pixel(x, y, true);
-                self.accent.set_pixel(x, y, false);
-            }
-            TriColor::Accent => {
-                self.bw.set_pixel(x, y, false);
-                self.accent.set_pixel(x, y, true);
-            }
-        }
+        let (bw_ink, accent_ink) = match color {
+            TriColor::White => (false, false),
+            TriColor::Black => (true, false),
+            TriColor::Accent => (false, true),
+        };
+        self.bw
+            .set_pixel(x, y, bw_ink != self.polarity.bw_ink_is_set_bit);
+        self.accent
+            .set_pixel(x, y, accent_ink != self.polarity.accent_ink_is_set_bit);
     }
 }
 

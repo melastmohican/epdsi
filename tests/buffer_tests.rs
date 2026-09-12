@@ -173,8 +173,13 @@ fn rotate180_matches_explicit_blit() {
     );
 }
 
-/// Regression tests for [`PageBufferPair`] / [`TriColor`] — the paired Black/White + accent
-/// plane draw target Tri-Color panels use.
+/// Regression tests for [`PageBufferPair`] / [`TriColor`] / [`PlanePolarity`] — the paired
+/// Black/White + accent plane draw target Tri-Color panels use.
+///
+/// `PlanePolarity::SSD168X` (Black/White plane normal, accent plane inverted — a *set* bit is
+/// red/yellow) is the convention hardware-verified against `GDEY0266Z90`/`GDEM0154Z90`; the
+/// buffers below are seeded with each plane's own background byte under that polarity
+/// (`0xFF` bw, `0x00` accent), not one shared fill value, because the two planes disagree.
 mod page_buffer_pair {
     use super::*;
 
@@ -183,23 +188,24 @@ mod page_buffer_pair {
     #[test]
     fn each_color_writes_only_its_own_plane() {
         let mut bw = [0xFFu8; 4];
-        let mut accent = [0xFFu8; 4];
+        let mut accent = [0x00u8; 4];
         {
-            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            let mut pair =
+                PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0, PlanePolarity::SSD168X);
             pair.set_pixel(0, 0, TriColor::Black);
             pair.set_pixel(1, 0, TriColor::Accent);
             pair.set_pixel(2, 0, TriColor::White);
         }
 
-        // Black: bw bit cleared, accent untouched (still background).
+        // Black: bw bit cleared (ink), accent untouched (still background, 0).
         assert_eq!(bw[0] & 0x80, 0x00);
-        assert_eq!(accent[0] & 0x80, 0x80);
-        // Accent: accent bit cleared, bw untouched (still background).
+        assert_eq!(accent[0] & 0x80, 0x00);
+        // Accent: accent bit set (ink, inverted plane), bw untouched (still background, 1).
         assert_eq!(bw[0] & 0x40, 0x40);
-        assert_eq!(accent[0] & 0x40, 0x00);
-        // White: both planes at background.
+        assert_eq!(accent[0] & 0x40, 0x40);
+        // White: both planes at their own background.
         assert_eq!(bw[0] & 0x20, 0x20);
-        assert_eq!(accent[0] & 0x20, 0x20);
+        assert_eq!(accent[0] & 0x20, 0x00);
     }
 
     /// Redrawing a pixel with a different color must not leave a stale bit on the plane the
@@ -208,17 +214,18 @@ mod page_buffer_pair {
     #[test]
     fn redrawing_a_pixel_clears_the_previous_colors_plane() {
         let mut bw = [0xFFu8; 4];
-        let mut accent = [0xFFu8; 4];
+        let mut accent = [0x00u8; 4];
         {
-            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            let mut pair =
+                PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0, PlanePolarity::SSD168X);
             pair.set_pixel(0, 0, TriColor::Accent);
             pair.set_pixel(0, 0, TriColor::Black);
         }
 
-        assert_eq!(bw[0] & 0x80, 0x00, "black bit should be set on bw plane");
+        assert_eq!(bw[0] & 0x80, 0x00, "black bit should be cleared on bw plane");
         assert_eq!(
             accent[0] & 0x80,
-            0x80,
+            0x00,
             "accent plane must be cleared back to background, not left set from the earlier draw"
         );
     }
@@ -228,16 +235,40 @@ mod page_buffer_pair {
     #[test]
     fn draw_target_routes_pixels_to_the_correct_plane() {
         let mut bw = [0xFFu8; 4];
-        let mut accent = [0xFFu8; 4];
+        let mut accent = [0x00u8; 4];
         {
-            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            let mut pair =
+                PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0, PlanePolarity::SSD168X);
             Pixel(Point::new(1, 0), TriColor::Accent)
                 .draw(&mut pair)
                 .unwrap();
         }
 
-        assert_eq!(accent[0] & 0x40, 0x00);
-        assert_eq!(bw[0] & 0x40, 0x40);
+        assert_eq!(accent[0] & 0x40, 0x40, "accent ink is the set bit on this polarity");
+        assert_eq!(bw[0] & 0x40, 0x40, "bw plane stays at background");
+    }
+
+    /// Swapping to [`PlanePolarity::UC8253`] (both planes inverted, unlike SSD168X where only
+    /// the accent plane is) must flip the Black/White plane's ink bit too — this is the exact
+    /// bug that shipped in the first cut of `PageBufferPair`, where the mapping was hardcoded to
+    /// the SSD168X convention regardless of the `polarity` a caller might supply.
+    #[test]
+    fn uc8253_polarity_inverts_the_bw_plane_ink_bit_too() {
+        let mut bw = [0x00u8; 4];
+        let mut accent = [0x00u8; 4];
+        {
+            let mut pair =
+                PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0, PlanePolarity::UC8253);
+            pair.set_pixel(0, 0, TriColor::Black);
+            pair.set_pixel(1, 0, TriColor::Accent);
+        }
+
+        // Under UC8253 polarity ink is the *set* bit on both planes, so Black now sets the bw
+        // bit (opposite of SSD168X, where the same call clears it).
+        assert_eq!(bw[0] & 0x80, 0x80, "UC8253 bw ink is the set bit");
+        assert_eq!(accent[0] & 0x80, 0x00, "bw draw must leave accent at background");
+        assert_eq!(bw[0] & 0x40, 0x00, "accent draw must leave bw at background");
+        assert_eq!(accent[0] & 0x40, 0x40, "UC8253 accent ink is the set bit");
     }
 
     /// `bounding_box` must reflect the shared width/height/`y_offset`, the same as a plain
@@ -245,8 +276,8 @@ mod page_buffer_pair {
     #[test]
     fn bounding_box_matches_the_shared_page_geometry() {
         let mut bw = [0xFFu8; 4];
-        let mut accent = [0xFFu8; 4];
-        let pair = PageBufferPair::new(&mut bw, &mut accent, 32, 4, 8);
+        let mut accent = [0x00u8; 4];
+        let pair = PageBufferPair::new(&mut bw, &mut accent, 32, 4, 8, PlanePolarity::SSD168X);
 
         let bb = pair.bounding_box();
         assert_eq!(bb.top_left, Point::new(0, 8));

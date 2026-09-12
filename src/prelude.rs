@@ -10,7 +10,9 @@ pub use crate::controllers::{
     Uc8253Controller, Uc8253RefreshMode, Uc8253Variant,
 };
 pub use crate::driver::{EpdBuilder, EpdDriver};
-pub use crate::graphics::buffer::{DisplayRotation, PageBuffer, PageBufferPair, TriColor};
+pub use crate::graphics::buffer::{
+    DisplayRotation, PageBuffer, PageBufferPair, PlanePolarity, TriColor,
+};
 pub use crate::graphics::paged::{render_paged, render_paged_tri_color};
 pub use crate::panels::{
     GxEPD2_213_B74, GxEPD2_266c, GxEPD2_370_GDEY037T03, GxEPD2_730c_GDEP073E01, E2154QS0F1,

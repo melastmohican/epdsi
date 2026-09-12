@@ -6,7 +6,7 @@ use embedded_hal::delay::DelayNs;
 use embedded_hal_async::delay::DelayNs;
 
 use crate::driver::EpdDriver;
-use crate::graphics::buffer::{PageBuffer, PageBufferPair};
+use crate::graphics::buffer::{PageBuffer, PageBufferPair, PlanePolarity};
 use crate::traits::{ColorChannel, EpdController, EpdPanel};
 
 /// Executes a GxEPD2-style paged rendering loop over display sub-regions.
@@ -80,7 +80,10 @@ where
 /// `accent_channel` is the panel's second-plane channel — [`ColorChannel::RedYellow`] for every
 /// Tri-Color panel `epdsi` ships. `page_buffers` is `(bw_page_buffer, accent_page_buffer)` —
 /// bundled into one tuple to keep the parameter count in line with `render_paged`'s — and each
-/// must be sized for one page, the same as `render_paged`'s single buffer.
+/// must be sized for one page, the same as `render_paged`'s single buffer. `polarity` must match
+/// the panel wired up — see [`PlanePolarity`]'s docs; there is no safe default, since panels
+/// genuinely disagree. Each plane's background fill byte is derived from `polarity` rather than
+/// taken as a parameter, so the fill can't drift out of sync with the polarity used to draw it.
 #[maybe_async_cfg::maybe(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
@@ -90,8 +93,8 @@ pub async fn render_paged_tri_color<BUS, CONTROLLER, PANEL, DELAY, F>(
     delay: &mut DELAY,
     accent_channel: ColorChannel,
     page_buffers: (&mut [u8], &mut [u8]),
+    polarity: PlanePolarity,
     page_height: u32,
-    clear_byte: u8,
     mut draw_fn: F,
 ) -> Result<(), CONTROLLER::Error>
 where
@@ -113,9 +116,10 @@ where
 
         let required_bytes = width.div_ceil(8) as usize * current_page_height as usize;
 
-        // Reset both plane buffers to the same background fill
-        bw_page_buffer[..required_bytes].fill(clear_byte);
-        accent_page_buffer[..required_bytes].fill(clear_byte);
+        // Reset both plane buffers to their own background fill — the two can differ (see
+        // `PlanePolarity`), which a single shared `clear_byte` could not express correctly.
+        bw_page_buffer[..required_bytes].fill(polarity.bw_background_byte());
+        accent_page_buffer[..required_bytes].fill(polarity.accent_background_byte());
 
         // Instantiate the paired page sub-region buffer wrapper
         let mut page_buf = PageBufferPair::new(
@@ -124,6 +128,7 @@ where
             width,
             current_page_height,
             y_start,
+            polarity,
         );
 
         // Invoke user drawing closure

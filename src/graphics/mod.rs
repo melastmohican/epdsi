@@ -3,5 +3,5 @@
 pub mod buffer;
 pub mod paged;
 
-pub use buffer::{PageBuffer, PageBufferPair, TriColor};
+pub use buffer::{PageBuffer, PageBufferPair, PlanePolarity, TriColor};
 pub use paged::{render_paged, render_paged_tri_color};

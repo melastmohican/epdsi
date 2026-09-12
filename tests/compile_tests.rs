@@ -184,8 +184,8 @@ async fn ssd1680_gdey0266z90_tri_color_paged_rendering_body() {
         &mut delay,
         ColorChannel::RedYellow,
         (&mut bw_page_buffer, &mut accent_page_buffer),
+        PlanePolarity::SSD168X,
         8,
-        0xFF,
         |page_buf| {
             let y = page_buf.bw().y_offset() + 2;
             page_buf.set_pixel(10, y, TriColor::Black);
