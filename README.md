@@ -77,19 +77,31 @@ For genuine sub-second differential updates, use a monochrome panel: `GDEM0213B7
 
 ### Drawing on Tri-Color panels
 
-Use [`PageBufferPair`] and [`TriColor`] to draw Tri-Color content — see examples 1, 7 and 10
-below. One `embedded-graphics` pass addresses both RAM planes at once, and [`PlanePolarity`]
-(`SSD168X` for `GDEM0154Z90`/`GDEY0266Z90`, `UC8253` for `SE0352N14TNGA0`) carries each panel's
-ink-bit convention, so drawing code no longer needs a raw fill-byte or a deliberately-inverted
-`BinaryColor` at the call site to compensate for it — that class of bug is the single most
-common mistake porting one Tri-Color panel's example to another (see the `ssd1680_gdey0266z90_epd`
-example's "Note on ink polarity" for what it looks like when it's wrong).
+There are two supported ways to draw Tri-Color content, and **[`PageBufferPair`] is the
+recommended default.** One `embedded-graphics` pass, addressed by [`TriColor`]
+(`White`/`Black`/`Accent`), reaches both RAM planes at once, and [`PlanePolarity`] (`SSD168X` for
+`GDEM0154Z90`/`GDEY0266Z90`, `UC8253` for `SE0352N14TNGA0`) carries each panel's ink-bit
+convention as a required constructor argument — so drawing code no longer needs a raw fill-byte
+or a deliberately-inverted `BinaryColor` at the call site to compensate for it. That class of bug
+is the single most common mistake porting one Tri-Color panel's example to another (see the
+`ssd1680_gdey0266z90_epd` example's "Note on ink polarity" for what it looks like when it's
+wrong); `PageBufferPair` removes it structurally rather than by convention. See examples 1, 7 and
+10 below, and [`render_paged_tri_color`] for the paged (low-RAM) counterpart of a full-panel
+sweep.
 
-[`render_paged_tri_color`] is the paged (low-RAM) counterpart, for a full-panel sweep. It does
-not yet support a windowed *region* update the way [`render_paged`] can be driven manually with
-`set_window`/`set_cursor` — for that, or for the refresh-mode/timing comparisons above, the
-manual dual-`PageBuffer` approach the hardware examples in this repo demonstrate is still the
-reference.
+The older **manual dual-`PageBuffer` approach still works and remains fully supported** — it is
+not deprecated, just no longer the default recommendation. Reach for it when you need a
+windowed *region* update (`render_paged_tri_color` only sweeps the whole panel; a manual
+`set_window`/`set_cursor` call plus two `PageBuffer`s is still how to redraw just a status band),
+or when comparing refresh-mode timing the way the hardware examples in this repo do.
+
+Both modes are demonstrated side by side, on the same content, on real hardware: every
+`<controller>_<panel>_epd` example in this repo's downstream hardware examples now has a
+`<controller>_<panel>_tri_epd` sibling that reproduces its exact phases and output through
+`PageBufferPair` instead — 12 examples across 4 boards (RP2350 blocking and async, RP2040,
+ESP32-C3) and all 3 Tri-Color panels `epdsi` ships, all flashed and confirmed working. If you're
+deciding which mode to learn first, start with the `_tri_epd` version of whichever example
+matches your panel.
 
 [`PageBufferPair`]: https://docs.rs/epdsi/latest/epdsi/graphics/buffer/struct.PageBufferPair.html
 [`TriColor`]: https://docs.rs/epdsi/latest/epdsi/graphics/buffer/enum.TriColor.html

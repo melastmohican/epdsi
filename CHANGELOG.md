@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Tri-Color panels now have two supported drawing modes — `PageBufferPair` (below) is the
+recommended default for new code; the existing manual dual-`PageBuffer` approach remains fully
+supported for windowed/partial-region updates and refresh-mode timing work. Both modes are
+hardware-verified side by side: every Tri-Color hardware example in this crate's downstream
+example repos gained a `PageBufferPair`-based sibling reproducing the same content, and all 12
+(across RP2350 blocking/async, RP2040, and ESP32-C3, covering all three Tri-Color panels `epdsi`
+ships) were flashed and confirmed working before this entry was written.
+
 ### Added
 
 - `TriColor`, `PlanePolarity` and `PageBufferPair` (`epdsi::graphics::buffer`), an
