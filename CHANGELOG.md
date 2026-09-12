@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inverted (a *set* bit is red/yellow); on UC8253 (`SE0352N14TNGA0`) *both* planes are inverted.
   `PlanePolarity::SSD168X` and `PlanePolarity::UC8253` cover both, verified against the existing
   hardware examples' documented polarity for each panel.
+- `PageBufferPair::clear`, resetting both planes to their own background fill under the pair's
+  `polarity` — the two-plane equivalent of `PageBuffer::clear_byte`, with no fill byte for the
+  caller to get wrong, needed for a manually-driven windowed/partial-region redraw (the pattern
+  `ssd1680_gdey0266z90_epd`'s Phase 2/4 band updates use) to reset its buffer between draws.
 - `render_paged_tri_color` (`epdsi::graphics::paged`), the `PageBufferPair` counterpart of
   `render_paged`: same page-by-page sweep, but writes both planes to their own channel
   (`ColorChannel::BlackWhite` and a caller-supplied accent channel, `ColorChannel::RedYellow`

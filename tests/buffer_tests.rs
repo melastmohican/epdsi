@@ -271,6 +271,24 @@ mod page_buffer_pair {
         assert_eq!(accent[0] & 0x40, 0x40, "UC8253 accent ink is the set bit");
     }
 
+    /// `clear` must reset both planes to their own background byte under this pair's
+    /// `polarity`, undoing whatever a previous draw left behind on both planes at once.
+    #[test]
+    fn clear_resets_both_planes_to_their_own_background() {
+        let mut bw = [0x00u8; 4];
+        let mut accent = [0xFFu8; 4];
+        {
+            let mut pair =
+                PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0, PlanePolarity::SSD168X);
+            pair.set_pixel(0, 0, TriColor::Black);
+            pair.set_pixel(1, 0, TriColor::Accent);
+            pair.clear();
+        }
+
+        assert_eq!(bw, [0xFFu8; 4], "bw plane must be back at its own background (0xFF)");
+        assert_eq!(accent, [0x00u8; 4], "accent plane must be back at its own background (0x00)");
+    }
+
     /// `bounding_box` must reflect the shared width/height/`y_offset`, the same as a plain
     /// `PageBuffer`.
     #[test]

@@ -270,6 +270,14 @@ impl<'a> PageBufferPair<'a> {
         }
     }
 
+    /// Resets both planes to their background fill, per this pair's `polarity` — the
+    /// `PageBufferPair` equivalent of [`PageBuffer::clear_byte`], with no fill byte to get
+    /// wrong since each plane's is derived from `polarity` rather than passed in.
+    pub fn clear(&mut self) {
+        self.bw.clear_byte(self.polarity.bw_background_byte());
+        self.accent.clear_byte(self.polarity.accent_background_byte());
+    }
+
     /// Sets the rotation on both planes together.
     pub fn set_rotation(&mut self, rotation: DisplayRotation) {
         self.bw.set_rotation(rotation);
