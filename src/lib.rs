@@ -66,7 +66,7 @@
 //! use epdsi::prelude::*;
 //! use embedded_graphics::{
 //!     prelude::*, primitives::{Rectangle, PrimitiveStyle},
-//!     pixelcolor::BinaryColor, geometry::{Point, Size},
+//!     geometry::{Point, Size},
 //! };
 //!
 //! // Wrap the SPI device and its control pins.
@@ -77,24 +77,29 @@
 //! let mut epd = EpdBuilder::<_, GDEM0154Z90>::new(controller).build(epd_bus);
 //! epd.init(&mut delay).unwrap();
 //!
-//! // Both RAM channels must be primed on a tri-colour panel.
-//! epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
-//! epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
-//!
-//! // Draw through embedded-graphics into a PageBuffer.
+//! // GDEM0154Z90 is a Tri-Color panel: draw both RAM planes together through one
+//! // `PageBufferPair`, addressed by `TriColor` instead of two separate `PageBuffer`s and
+//! // their disagreeing raw bit polarities. `PlanePolarity::SSD168X` is the constant this
+//! // controller family needs — see its docs if porting to a different controller.
 //! let mut bw_buf = [0xFFu8; 200 * 200 / 8];
-//! let mut display = PageBuffer::new(&mut bw_buf, 200, 200, 0);
+//! let mut accent_buf = [0x00u8; 200 * 200 / 8];
+//! let mut display = PageBufferPair::new(
+//!     &mut bw_buf, &mut accent_buf, 200, 200, 0, PlanePolarity::SSD168X,
+//! );
 //! Rectangle::new(Point::new(10, 10), Size::new(50, 50))
-//!     .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+//!     .into_styled(PrimitiveStyle::with_fill(TriColor::Accent))
 //!     .draw(&mut display)
 //!     .unwrap();
 //!
-//! epd.write_frame(ColorChannel::BlackWhite, display.as_slice()).unwrap();
+//! epd.write_frame(ColorChannel::BlackWhite, display.bw().as_slice()).unwrap();
+//! epd.write_frame(ColorChannel::RedYellow, display.accent().as_slice()).unwrap();
 //! epd.refresh(&mut delay).unwrap();
 //! # }
 //! ```
 //!
-//! [`prelude`] re-exports everything above and is the intended single import.
+//! [`prelude`] re-exports everything above and is the intended single import. For a
+//! monochrome-only panel, draw into a single [`PageBuffer`] with `embedded-graphics`'
+//! `BinaryColor` instead — see the "Low-RAM paged rendering" section below.
 //!
 //! # Low-RAM paged rendering
 //!
@@ -103,6 +108,10 @@
 //! horizontal band at a time, handing a small stack-allocated [`PageBuffer`] to a closure
 //! for each band, writing it, and refreshing once at the end. This is the GxEPD2 paged
 //! pattern; RAM use is set by the page height you choose, not by panel size.
+//!
+//! [`render_paged_tri_color`](graphics::render_paged_tri_color) is the same sweep for
+//! Tri-Color panels, handing the closure a [`PageBufferPair`] per page instead of a single
+//! [`PageBuffer`] — the paged counterpart to the Quick Start example above.
 //!
 //! # Colour panels refresh slowly, and that is physics
 //!
@@ -184,6 +193,7 @@
 //! [`E2154QS0F1`]: panels::E2154QS0F1
 //! [`E2417QS0A3`]: panels::E2417QS0A3
 //! [`PageBuffer`]: graphics::PageBuffer
+//! [`PageBufferPair`]: graphics::PageBufferPair
 //! [`embedded-hal`]: https://docs.rs/embedded-hal/1.0.0/embedded_hal/
 //! [`rust-rpico2-discovery`]: https://github.com/melastmohican/rust-rpico2-discovery
 //! [`rust-reterminal-e1002-examples`]: https://github.com/melastmohican/rust-reterminal-e1002-examples

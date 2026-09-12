@@ -75,6 +75,28 @@ For genuine sub-second differential updates, use a monochrome panel: `GDEM0213B7
 `GDEQ0426T82` (`Ssd1677RefreshMode::Partial`), or the Pervasive Displays panels via
 `PervasiveRefreshMode::Fast` and `write_fast_frame`.
 
+### Drawing on Tri-Color panels
+
+Use [`PageBufferPair`] and [`TriColor`] to draw Tri-Color content — see examples 1, 7 and 10
+below. One `embedded-graphics` pass addresses both RAM planes at once, and [`PlanePolarity`]
+(`SSD168X` for `GDEM0154Z90`/`GDEY0266Z90`, `UC8253` for `SE0352N14TNGA0`) carries each panel's
+ink-bit convention, so drawing code no longer needs a raw fill-byte or a deliberately-inverted
+`BinaryColor` at the call site to compensate for it — that class of bug is the single most
+common mistake porting one Tri-Color panel's example to another (see the `ssd1680_gdey0266z90_epd`
+example's "Note on ink polarity" for what it looks like when it's wrong).
+
+[`render_paged_tri_color`] is the paged (low-RAM) counterpart, for a full-panel sweep. It does
+not yet support a windowed *region* update the way [`render_paged`] can be driven manually with
+`set_window`/`set_cursor` — for that, or for the refresh-mode/timing comparisons above, the
+manual dual-`PageBuffer` approach the hardware examples in this repo demonstrate is still the
+reference.
+
+[`PageBufferPair`]: https://docs.rs/epdsi/latest/epdsi/graphics/buffer/struct.PageBufferPair.html
+[`TriColor`]: https://docs.rs/epdsi/latest/epdsi/graphics/buffer/enum.TriColor.html
+[`PlanePolarity`]: https://docs.rs/epdsi/latest/epdsi/graphics/buffer/struct.PlanePolarity.html
+[`render_paged_tri_color`]: https://docs.rs/epdsi/latest/epdsi/graphics/paged/fn.render_paged_tri_color.html
+[`render_paged`]: https://docs.rs/epdsi/latest/epdsi/graphics/paged/fn.render_paged.html
+
 ## Quick Start
 
 Add `epdsi` to your `Cargo.toml`:
@@ -109,9 +131,13 @@ The snippets below are abridged; for complete flashable programs see [Examples o
 
 ### 1. Usage Example (SSD1681 Controller + GDEM0154Z90 Panel)
 
+`GDEM0154Z90` is Tri-Color, so drawing goes through `PageBufferPair` and `TriColor` rather than
+a single `PageBuffer` — one drawing pass addresses both RAM planes, and `PlanePolarity::SSD168X`
+carries the panel's ink-bit convention instead of a raw fill-byte comment at every call site.
+
 ```rust,ignore
 use epdsi::prelude::*;
-use embedded_graphics::{prelude::*, primitives::{Rectangle, PrimitiveStyle}, pixelcolor::BinaryColor, geometry::{Point, Size}};
+use embedded_graphics::{prelude::*, primitives::{Rectangle, PrimitiveStyle}, geometry::{Point, Size}};
 
 // Initialize SPI bus wrapper and controller
 let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
@@ -123,21 +149,21 @@ let mut epd = EpdBuilder::<_, GDEM0154Z90>::new(controller).build(epd_bus);
 // Initialize display
 epd.init(&mut delay).unwrap();
 
-// Clear RAM channels
-epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
-epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
-
-// Render graphics using PageBuffer
+// Render graphics using PageBufferPair — both RAM planes together, addressed by TriColor
 let mut bw_buf = [0xFFu8; (200 * 200 / 8) as usize];
-let mut display = PageBuffer::new(&mut bw_buf, 200, 200, 0);
+let mut accent_buf = [0x00u8; (200 * 200 / 8) as usize];
+let mut display = PageBufferPair::new(
+    &mut bw_buf, &mut accent_buf, 200, 200, 0, PlanePolarity::SSD168X,
+);
 
 Rectangle::new(Point::new(10, 10), Size::new(50, 50))
-    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+    .into_styled(PrimitiveStyle::with_fill(TriColor::Black))
     .draw(&mut display)
     .unwrap();
 
-// Send frame and refresh display
-epd.write_frame(ColorChannel::BlackWhite, display.as_slice()).unwrap();
+// Send both frames and refresh display
+epd.write_frame(ColorChannel::BlackWhite, display.bw().as_slice()).unwrap();
+epd.write_frame(ColorChannel::RedYellow, display.accent().as_slice()).unwrap();
 epd.refresh(&mut delay).unwrap();
 ```
 
@@ -257,10 +283,18 @@ let mut epd = EpdBuilder::<_, SE0352N14TNGA0>::new(controller).build(epd_bus);
 
 epd.init(&mut delay).unwrap();
 
-// 0x00 is white in BOTH planes on this panel — the opposite of the monochrome UC8253
-// panel's 0xFF. Set bits are ink.
-epd.clear_frame(ColorChannel::BlackWhite, 0x00).unwrap();
-epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
+// PlanePolarity::UC8253: unlike SSD168x, BOTH planes are inverted here (set bits are ink,
+// the opposite of the monochrome UC8253 panel's 0xFF-white convention). PageBufferPair
+// derives each plane's background fill from this, so no raw fill-byte juggling is needed.
+let mut bw_buf = [0u8; (240 * 360 / 8) as usize];
+let mut accent_buf = [0u8; (240 * 360 / 8) as usize];
+let mut display = PageBufferPair::new(
+    &mut bw_buf, &mut accent_buf, 240, 360, 0, PlanePolarity::UC8253,
+);
+// ... draw with TriColor::{Black, White, Accent} as in example 1 ...
+
+epd.write_frame(ColorChannel::BlackWhite, display.bw().as_slice()).unwrap();
+epd.write_frame(ColorChannel::RedYellow, display.accent().as_slice()).unwrap();
 epd.refresh(&mut delay).unwrap();
 
 // sleep() enters deep sleep; call init() again before the next frame.
@@ -329,11 +363,19 @@ let mut epd = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(epd_bus);
 
 epd.init(&mut delay).unwrap();
 
-// The two RAM planes disagree on ink polarity: 0xFF is white in the Black/White plane, but the
-// Red plane is inverted, so 0x00 is *no* red and a set bit is red. Both vendor drivers and
-// GxEPD2 write `~color` for this reason.
-epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
-epd.clear_frame(ColorChannel::RedYellow, 0x00).unwrap();
+// The two RAM planes disagree on ink polarity: 0xFF is white in the Black/White plane, but
+// the Red plane is inverted (a set bit is red) — PlanePolarity::SSD168X carries that, so
+// PageBufferPair derives each plane's background fill correctly rather than a manual
+// per-plane clear_frame call with an easy-to-invert raw byte.
+let mut bw_buf = [0u8; (152 * 296 / 8) as usize];
+let mut accent_buf = [0u8; (152 * 296 / 8) as usize];
+let mut display = PageBufferPair::new(
+    &mut bw_buf, &mut accent_buf, 152, 296, 0, PlanePolarity::SSD168X,
+);
+// ... draw with TriColor::{Black, White, Accent} as in example 1 ...
+
+epd.write_frame(ColorChannel::BlackWhite, display.bw().as_slice()).unwrap();
+epd.write_frame(ColorChannel::RedYellow, display.accent().as_slice()).unwrap();
 epd.refresh(&mut delay).unwrap();
 
 // sleep() enters deep sleep; call init() again before the next frame.
