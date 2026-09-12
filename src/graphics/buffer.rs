@@ -165,3 +165,121 @@ impl<'a> DrawTarget for PageBuffer<'a> {
         Ok(())
     }
 }
+
+/// The three-state palette a Tri-Color panel's two RAM planes render together: Black/White plus
+/// one accent ink, wired to whichever physical color the panel's second plane carries (red or
+/// yellow — see [`ColorChannel::RedYellow`](crate::traits::ColorChannel::RedYellow)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum TriColor {
+    /// White — no ink in either plane.
+    #[default]
+    White,
+    /// Black ink, written to the Black/White plane.
+    Black,
+    /// Accent ink (red or yellow, depending on the panel), written to the second plane.
+    Accent,
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl PixelColor for TriColor {
+    type Raw = ();
+}
+
+/// A pair of [`PageBuffer`]s addressing a Tri-Color panel's Black/White and accent (red/yellow)
+/// RAM planes together as one `DrawTarget<Color = TriColor>`. One `embedded-graphics` draw call
+/// routes each pixel to the correct plane, instead of needing two separate [`render_paged`]
+/// passes with a `BinaryColor` closure apiece.
+///
+/// [`render_paged`]: crate::graphics::paged::render_paged
+pub struct PageBufferPair<'a> {
+    bw: PageBuffer<'a>,
+    accent: PageBuffer<'a>,
+}
+
+impl<'a> PageBufferPair<'a> {
+    /// Creates a new `PageBufferPair` wrapping the Black/White and accent plane buffers for one
+    /// page. Both buffers must be at least `width.div_ceil(8) * height` bytes long.
+    pub fn new(
+        bw_buffer: &'a mut [u8],
+        accent_buffer: &'a mut [u8],
+        width: u32,
+        height: u32,
+        y_offset: u32,
+    ) -> Self {
+        Self {
+            bw: PageBuffer::new(bw_buffer, width, height, y_offset),
+            accent: PageBuffer::new(accent_buffer, width, height, y_offset),
+        }
+    }
+
+    /// Sets the rotation on both planes together.
+    pub fn set_rotation(&mut self, rotation: DisplayRotation) {
+        self.bw.set_rotation(rotation);
+        self.accent.set_rotation(rotation);
+    }
+
+    /// Returns the current rotation.
+    pub fn rotation(&self) -> DisplayRotation {
+        self.bw.rotation()
+    }
+
+    /// Access the Black/White plane buffer.
+    pub fn bw(&self) -> &PageBuffer<'a> {
+        &self.bw
+    }
+
+    /// Access the accent (red/yellow) plane buffer.
+    pub fn accent(&self) -> &PageBuffer<'a> {
+        &self.accent
+    }
+
+    /// Sets one pixel to `color`, clearing the plane `color` does not use so a pixel redrawn
+    /// with a different color does not leave a stale bit behind on the other plane.
+    ///
+    /// Coordinate (x, y) is in absolute display space, same as [`PageBuffer::set_pixel`].
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: TriColor) {
+        match color {
+            TriColor::White => {
+                self.bw.set_pixel(x, y, false);
+                self.accent.set_pixel(x, y, false);
+            }
+            TriColor::Black => {
+                self.bw.set_pixel(x, y, true);
+                self.accent.set_pixel(x, y, false);
+            }
+            TriColor::Accent => {
+                self.bw.set_pixel(x, y, false);
+                self.accent.set_pixel(x, y, true);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl<'a> Dimensions for PageBufferPair<'a> {
+    fn bounding_box(&self) -> Rectangle {
+        self.bw.bounding_box()
+    }
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl<'a> DrawTarget for PageBufferPair<'a> {
+    type Color = TriColor;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(point, color) in pixels {
+            if point.x >= 0 && point.y >= 0 {
+                self.set_pixel(point.x as u32, point.y as u32, color);
+            }
+        }
+        Ok(())
+    }
+}

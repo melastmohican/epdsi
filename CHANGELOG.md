@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `TriColor` and `PageBufferPair` (`epdsi::graphics::buffer`), an `embedded-graphics`
+  `DrawTarget<Color = TriColor>` that addresses a Tri-Color panel's Black/White and accent
+  (red/yellow) RAM planes together, so a single drawing pass routes each pixel to the correct
+  plane instead of requiring two separate `render_paged` calls with a `BinaryColor` closure
+  apiece. `TriColor` has three variants — `White`, `Black`, `Accent` — mirroring the
+  three-color palette the panel itself renders.
+- `render_paged_tri_color` (`epdsi::graphics::paged`), the `PageBufferPair` counterpart of
+  `render_paged`: same page-by-page sweep, but writes both planes to their own channel
+  (`ColorChannel::BlackWhite` and a caller-supplied accent channel, `ColorChannel::RedYellow`
+  for every Tri-Color panel `epdsi` ships) before advancing to the next page. Purely additive —
+  `render_paged` is untouched, and no controller changes were needed.
+
 ## [0.2.1] - 2026-09-05
 
 ### Fixed

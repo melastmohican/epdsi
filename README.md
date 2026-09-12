@@ -95,7 +95,7 @@ deprecated since 0.1.6 are removed) alongside the new async API below — see th
 | Feature | Default | Description |
 | :--- | :---: | :--- |
 | `blocking` | yes | The plain `embedded-hal` 1.0 API used in every example below. Disabling it (`default-features = false`, then re-add `graphics` if wanted) switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead — same types, same method names, same `Result`s, just `.await`ed. |
-| `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer` and `render_paged` still work, you just draw into the buffer yourself. |
+| `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer` and `PageBufferPair`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer`/`PageBufferPair` and `render_paged`/`render_paged_tri_color` still work, you just draw into the buffer(s) yourself. |
 | `defmt` | no | Derives `defmt::Format` on the public error and mode enums (`EpdBusError`, `Spi3BusError`, `PervasiveBwryOtpError`, `ColorMode`, `ColorChannel`, `SevenColor`, and the per-controller refresh/variant enums) for logging on embedded targets. |
 
 `blocking` and the async API it replaces are mutually exclusive, not additive — a bus is one or

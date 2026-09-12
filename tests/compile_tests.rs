@@ -156,6 +156,55 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn ssd1680_gdey0266z90_tri_color_paged_rendering_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(bus);
+
+    driver.init(&mut delay).await.expect("Initialization failed");
+
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .await
+        .expect("Clear black/white frame failed");
+    driver
+        .clear_frame(ColorChannel::RedYellow, 0x00)
+        .await
+        .expect("Clear red frame failed");
+
+    // 296 divides evenly into 8-row pages; 19 bytes per line, one buffer per plane.
+    let mut bw_page_buffer = [0u8; (152 * 8) / 8];
+    let mut accent_page_buffer = [0u8; (152 * 8) / 8];
+    render_paged_tri_color(
+        &mut driver,
+        &mut delay,
+        ColorChannel::RedYellow,
+        (&mut bw_page_buffer, &mut accent_page_buffer),
+        8,
+        0xFF,
+        |page_buf| {
+            let y = page_buf.bw().y_offset() + 2;
+            page_buf.set_pixel(10, y, TriColor::Black);
+            page_buf.set_pixel(11, y, TriColor::Accent);
+            page_buf.set_pixel(12, y, TriColor::White);
+        },
+    )
+    .await
+    .expect("Tri-Color paged rendering failed");
+}
+epd_test!(
+    test_ssd1680_gdey0266z90_tri_color_paged_rendering,
+    ssd1680_gdey0266z90_tri_color_paged_rendering_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn jd79661_epd_driver_instantiation_and_paged_rendering_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);

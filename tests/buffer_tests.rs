@@ -172,3 +172,84 @@ fn rotate180_matches_explicit_blit() {
         "Rotate180 diverges from an explicit blit at byte {first_diff:?}"
     );
 }
+
+/// Regression tests for [`PageBufferPair`] / [`TriColor`] — the paired Black/White + accent
+/// plane draw target Tri-Color panels use.
+mod page_buffer_pair {
+    use super::*;
+
+    /// Each `TriColor` variant must write only the plane it owns, leaving the other at its
+    /// background fill.
+    #[test]
+    fn each_color_writes_only_its_own_plane() {
+        let mut bw = [0xFFu8; 4];
+        let mut accent = [0xFFu8; 4];
+        {
+            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            pair.set_pixel(0, 0, TriColor::Black);
+            pair.set_pixel(1, 0, TriColor::Accent);
+            pair.set_pixel(2, 0, TriColor::White);
+        }
+
+        // Black: bw bit cleared, accent untouched (still background).
+        assert_eq!(bw[0] & 0x80, 0x00);
+        assert_eq!(accent[0] & 0x80, 0x80);
+        // Accent: accent bit cleared, bw untouched (still background).
+        assert_eq!(bw[0] & 0x40, 0x40);
+        assert_eq!(accent[0] & 0x40, 0x00);
+        // White: both planes at background.
+        assert_eq!(bw[0] & 0x20, 0x20);
+        assert_eq!(accent[0] & 0x20, 0x20);
+    }
+
+    /// Redrawing a pixel with a different color must not leave a stale bit on the plane the
+    /// previous color used — otherwise an accent pixel painted over with black would still
+    /// render red/yellow underneath the black ink.
+    #[test]
+    fn redrawing_a_pixel_clears_the_previous_colors_plane() {
+        let mut bw = [0xFFu8; 4];
+        let mut accent = [0xFFu8; 4];
+        {
+            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            pair.set_pixel(0, 0, TriColor::Accent);
+            pair.set_pixel(0, 0, TriColor::Black);
+        }
+
+        assert_eq!(bw[0] & 0x80, 0x00, "black bit should be set on bw plane");
+        assert_eq!(
+            accent[0] & 0x80,
+            0x80,
+            "accent plane must be cleared back to background, not left set from the earlier draw"
+        );
+    }
+
+    /// `PageBufferPair` must work as an `embedded-graphics` `DrawTarget<Color = TriColor>`, not
+    /// just through its own `set_pixel`.
+    #[test]
+    fn draw_target_routes_pixels_to_the_correct_plane() {
+        let mut bw = [0xFFu8; 4];
+        let mut accent = [0xFFu8; 4];
+        {
+            let mut pair = PageBufferPair::new(&mut bw, &mut accent, 32, 1, 0);
+            Pixel(Point::new(1, 0), TriColor::Accent)
+                .draw(&mut pair)
+                .unwrap();
+        }
+
+        assert_eq!(accent[0] & 0x40, 0x00);
+        assert_eq!(bw[0] & 0x40, 0x40);
+    }
+
+    /// `bounding_box` must reflect the shared width/height/`y_offset`, the same as a plain
+    /// `PageBuffer`.
+    #[test]
+    fn bounding_box_matches_the_shared_page_geometry() {
+        let mut bw = [0xFFu8; 4];
+        let mut accent = [0xFFu8; 4];
+        let pair = PageBufferPair::new(&mut bw, &mut accent, 32, 4, 8);
+
+        let bb = pair.bounding_box();
+        assert_eq!(bb.top_left, Point::new(0, 8));
+        assert_eq!(bb.size, Size::new(32, 4));
+    }
+}
