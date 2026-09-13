@@ -9,8 +9,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify:
+    name: Verify (full CI matrix)
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Publish to crates.io and GitHub
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       # Required for crates.io Trusted Publishing (OIDC token exchange).

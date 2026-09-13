@@ -8,6 +8,10 @@ on:
       - "**/README.md"
   pull_request:
   workflow_dispatch:
+  # Lets release.yml run this exact matrix against the tagged commit and gate
+  # publishing on it passing, instead of relying on a separately-triggered,
+  # separately-timed CI run on the branch push that happened to land the tag.
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
