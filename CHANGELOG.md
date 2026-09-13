@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-12
+
+### Fixed
+
+- `GDEY0266T90`'s Gray4 LUT (`GRAY4_LUT`) was declared `static` and referenced from the `const
+  GRAY4` panel default — legal on newer Rust, but `error[E0013]: constants cannot refer to
+  statics` on this crate's MSRV (1.75), where that restriction hadn't yet been relaxed. This broke
+  **every** consumer building on the MSRV toolchain, not an edge case: `0.3.0` failed to compile at
+  all under `cargo +1.75.0 check`. Caught by CI's MSRV job immediately after the `0.3.0` push (not
+  before it — the regular verification matrix run pre-release used a newer local toolchain, which
+  compiles the old code fine, so this slipped through). Changed `GRAY4_LUT` to `const`, verified
+  against `cargo +1.75.0 check --all-features` and `--no-default-features --features graphics`
+  directly before this release, not just on CI. If you're on `0.3.0`, upgrade to this release
+  rather than staying pinned to it.
+
 ## [0.3.0] - 2026-09-12
 
 ### Added
@@ -459,7 +474,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/melastmohican/epdsi/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/melastmohican/epdsi/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/melastmohican/epdsi/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/melastmohican/epdsi/compare/v0.2.0...v0.2.1
