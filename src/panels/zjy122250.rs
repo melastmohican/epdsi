@@ -33,4 +33,8 @@ impl EpdPanel for ZJY122250_0213AJH_E5 {
 
     /// Panel color operating mode (Quad-Color: Black, White, Red, Yellow).
     const COLOR_MODE: ColorMode = ColorMode::QuadColor;
+
+    /// JD79661 pads this 122px panel to 128px (32 bytes/row) RAM columns — see the "RAM
+    /// Alignment" note above.
+    const RAM_WIDTH: u32 = 128;
 }

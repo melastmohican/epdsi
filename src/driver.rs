@@ -7,7 +7,14 @@ use embedded_hal::delay::DelayNs;
 use embedded_hal_async::delay::DelayNs;
 
 use crate::bus::ValidationError;
-use crate::traits::{ColorChannel, EpdController, EpdPanel};
+use crate::traits::{ColorChannel, ColorMode, EpdController, EpdPanel};
+
+/// Byte count for one packed 2-bits-per-pixel `QuadColor` row, rounded up to the next whole
+/// byte at 4 pixels/byte — see [`EpdPanel::RAM_WIDTH`] for why `ram_width` (not the panel's
+/// visible `WIDTH`) is the right input here.
+fn quad_color_row_bytes(ram_width: u32) -> usize {
+    (ram_width as usize * 2).div_ceil(8)
+}
 
 /// Primary display driver orchestrating physical communications, controller logic, and panel dimensions.
 pub struct EpdDriver<BUS, CONTROLLER, PANEL> {
@@ -83,6 +90,9 @@ where
         let height = (y_end - y_start + 1) as usize;
         match channel {
             ColorChannel::Color7(_) => (width * height).div_ceil(2),
+            _ if PANEL::COLOR_MODE == ColorMode::QuadColor => {
+                quad_color_row_bytes(PANEL::RAM_WIDTH) * height
+            }
             _ => width.div_ceil(8) * height,
         }
     }
@@ -170,7 +180,12 @@ where
     ) -> Result<(), CONTROLLER::Error> {
         // Rows are byte-addressed in controller RAM, so a panel whose width is not a multiple
         // of 8 (such as the 122 px GDEM0213B74) still occupies `width.div_ceil(8)` bytes per row.
-        let total_bytes = PANEL::WIDTH.div_ceil(8) as usize * PANEL::HEIGHT as usize;
+        // `QuadColor` panels pack 2 bits/pixel instead, and may need `RAM_WIDTH` rather than the
+        // visible `WIDTH` — see `EpdPanel::RAM_WIDTH`.
+        let total_bytes = match PANEL::COLOR_MODE {
+            ColorMode::QuadColor => quad_color_row_bytes(PANEL::RAM_WIDTH) * PANEL::HEIGHT as usize,
+            _ => PANEL::WIDTH.div_ceil(8) as usize * PANEL::HEIGHT as usize,
+        };
         self.controller
             .write_frame_pattern(&mut self.bus, channel, pattern_byte, total_bytes)
             .await

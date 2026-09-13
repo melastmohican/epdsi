@@ -166,6 +166,13 @@ pub trait EpdPanel {
     /// `for_panel` — it must be passed explicitly via `.with_gray4(P::GRAY4)`, since Gray4 is a
     /// wholly different, mutually exclusive waveform configuration rather than an additive tweak.
     const GRAY4: Option<Gray4Registers> = None;
+
+    /// Controller-internal RAM row width in pixels, if padded beyond the visible [`Self::WIDTH`]
+    /// for X-window addressing granularity (e.g. a controller that pads a 122px panel to 128px
+    /// RAM columns). Most panels leave this at the default. See
+    /// [`ZJY122250_0213AJH_E5`](crate::panels::ZJY122250_0213AJH_E5) for the one existing panel
+    /// that overrides it.
+    const RAM_WIDTH: u32 = Self::WIDTH;
 }
 
 /// Trait encapsulating driver IC command sets, register sequences, and refresh triggers.

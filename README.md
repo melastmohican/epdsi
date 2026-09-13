@@ -28,7 +28,8 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
 | **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`), `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`) | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane. `GDEY0266T90`: [Good Display GDEY0266T90](https://www.good-display.com/product/412.html) / [Waveshare 2.66" e-Paper](https://www.waveshare.com/2.66inch-e-Paper.htm) — same footprint as `GDEY0266Z90` but **monochrome-only**, and genuinely fast: real Full/Partial refresh, not the parity-only Partial the Tri-Color sibling has (`FastFull` also supported, not yet cleanly measured). Hardware-verified blocking on RP2350, RP2040 and ESP32-C3, and async on RP2350: `Full` and `Partial` both render correctly, though `Partial` measured ~4.1 s per update on the original RP2350 unit, not the ~500 ms the reference driver quotes. Also supports [4-level grayscale](#4-level-grayscale-gray4-on-gdey0266t90) via `GRAY4`/`Ssd168xRefreshMode::Gray4` — Adafruit_EPD-sourced, not Good Display/Waveshare — hardware-verified through `epdsi`'s own driver across the same RP2350/RP2040/ESP32-C3 blocking + RP2350 async spread |
-| **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
+| **JD79661** (`Jd79661Controller` / `Jd7966xController`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
+| **JD79660A** (`Jd79660Controller` / `Jd7966xController`) | `GDEM0154F51H` (`GxEPD2_154c_GDEM0154F51H`) | 200 × 200 | Quad-Color | 1.54" Quad-Color [Good Display GDEM0154F51H](https://www.good-display.com/product/555.html) / [Waveshare 1.54inch e-Paper (G)](https://www.waveshare.com/1.54inch-e-paper-g.htm), SKU 30441, Active-Low BUSY, Full refresh only (~20 s). Shares its SPI register table with JD79661 (same `Jd7966xController`), differing only in which registers init writes. **Not yet hardware-verified** |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
 | **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | Spectra 6 (4bpp) | 7.3" six-colour E Ink Spectra 6 / `GDEP073E01(E6)` — black, white, red, yellow, blue, green. `SevenColor::Orange` is ACeP-7 only and **not** renderable here (Seeed reTerminal E1002) |
@@ -456,6 +457,26 @@ render_paged_gray4(
 ```
 
 [`GDEY0266T90`]: https://docs.rs/epdsi/latest/epdsi/panels/struct.GDEY0266T90.html
+
+### 12. Usage Example (Jd79660Controller + GDEM0154F51H Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Jd79660Controller and Jd79661Controller are thin wrappers over the shared Jd7966xController —
+// same relationship as Ssd1680Controller/Ssd1681Controller over Ssd168xController.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Jd79660Controller::new(GDEM0154F51H::WIDTH, GDEM0154F51H::HEIGHT);
+
+// Build driver for the Good Display GDEM0154F51H / Waveshare 1.54inch e-Paper (G), 200x200
+let mut epd = EpdBuilder::<_, GDEM0154F51H>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// Send 2bpp packed QuadColor frame buffer (10,000 bytes — 200x200 needs no RAM padding)
+epd.write_frame(ColorChannel::BlackWhite, &quad_color_frame_buf).unwrap();
+epd.refresh(&mut delay).unwrap();
+```
 
 ## Examples on real hardware
 

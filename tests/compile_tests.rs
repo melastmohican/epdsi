@@ -262,7 +262,7 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
-async fn jd79661_epd_driver_instantiation_and_paged_rendering_body() {
+async fn jd79661_epd_driver_instantiation_and_frame_write_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
     let mut delay = DummyDelay;
@@ -280,31 +280,64 @@ async fn jd79661_epd_driver_instantiation_and_paged_rendering_body() {
         .await
         .expect("Initialization failed");
 
+    // Quad-Color panels pack 2 bits/pixel and aren't wired into the 1bpp `render_paged` sweep
+    // (see `RAM_WIDTH`/`quad_color_row_bytes` in `src/driver.rs`) — drive `clear_frame`/
+    // `write_frame` directly instead, at the panel's real 2bpp RAM size: 128px RAM_WIDTH (this
+    // panel pads 122px to 128px) * 2 bits/pixel / 8 * 250 rows = 8000 bytes.
     driver
         .clear_frame(ColorChannel::BlackWhite, 0xFF)
         .await
         .expect("Clear frame failed");
 
-    // 122 px is not a byte multiple, so a row occupies 122.div_ceil(8) == 16 bytes, not
-    // 122 / 8 == 15.
-    let mut page_buffer = [0u8; 16 * 20];
-    render_paged(
-        &mut driver,
-        &mut delay,
-        ColorChannel::BlackWhite,
-        &mut page_buffer,
-        20,
-        0xFF,
-        |page_buf| {
-            page_buf.set_pixel(10, page_buf.y_offset() + 5, true);
-        },
-    )
-    .await
-    .expect("Paged rendering failed");
+    let frame = [0x55u8; 8000];
+    driver
+        .write_frame(ColorChannel::BlackWhite, &frame)
+        .await
+        .expect("Write frame failed");
 }
 epd_test!(
-    test_jd79661_epd_driver_instantiation_and_paged_rendering,
-    jd79661_epd_driver_instantiation_and_paged_rendering_body
+    test_jd79661_epd_driver_instantiation_and_frame_write,
+    jd79661_epd_driver_instantiation_and_frame_write_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn jd79660_epd_driver_instantiation_and_frame_write_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Jd79660Controller::new(GDEM0154F51H::WIDTH, GDEM0154F51H::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEM0154F51H>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 200);
+    assert_eq!(driver.height(), 200);
+
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
+
+    // 200 is already 8px-aligned, so RAM_WIDTH stays at its default (200): 200 * 2 bits/pixel / 8
+    // * 200 rows = 10000 bytes — this is what locks in the `EpdDriver::clear_frame`/
+    // `required_bytes` alignment-aware fix for a byte-aligned QuadColor panel.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .await
+        .expect("Clear frame failed");
+
+    let frame = [0x55u8; 10_000];
+    driver
+        .write_frame(ColorChannel::BlackWhite, &frame)
+        .await
+        .expect("Write frame failed");
+}
+epd_test!(
+    test_jd79660_epd_driver_instantiation_and_frame_write,
+    jd79660_epd_driver_instantiation_and_frame_write_body
 );
 
 #[maybe_async_cfg::maybe(

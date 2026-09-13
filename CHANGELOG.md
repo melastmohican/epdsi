@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`GDEM0154F51H`** (**`GxEPD2_154c_GDEM0154F51H`**), the Good Display / Waveshare 1.54inch
+  e-Paper (G) module (SKU 30441, JD79660AA, 200×200, Black/White/Red/Yellow) — a new
+  `Jd79660Controller`. Register sequence derived from Waveshare's `EPD_1in54g.c`/`.h` and GxEPD2's
+  `GxEPD2_154c_GDEM0154F51H.cpp`/`.h`, which agree byte-for-byte on the plain init/refresh/sleep
+  path, then cross-checked directly against the JD79660A datasheet (v1.0.3) for register lengths
+  and defaults. Fast-update mode is not implemented — the two reference sources disagree on
+  register ordering for it, and the vendor's own demo defaults to the plain path anyway.
+  **Not yet verified on physical hardware.**
+
+### Changed
+
+- `Jd79661Controller` is now a thin wrapper over a shared `Jd7966xController`/`Jd7966xVariant`
+  (mirroring `Ssd1680Controller`/`Ssd1681Controller` over `Ssd168xController`/`Ssd168xVariant`),
+  since the JD79660A and JD79661AA datasheets share an identical SPI command-register table.
+  `Jd79661Controller::new`'s public signature and behavior are unchanged apart from the fix below;
+  the module moved from `src/controllers/jd79661.rs` to `src/controllers/jd7966x.rs`.
+
+### Fixed
+
+- `Jd79661Controller::trigger_refresh`/`sleep` now send the mandatory trailing `0x00` data byte on
+  `DISPLAY_REFRESH` (`0x12`) and `POWER_OFF` (`0x02`) — previously sent bare. Both the JD79660A and
+  JD79661AA datasheets document one data byte (default `0x00`) for each command, and Adafruit's own
+  `Adafruit_JD79661.cpp` sends it explicitly; only reading the datasheet directly (not just the two
+  vendor C++ references, which happened to agree with each other) surfaced this.
+- `EpdDriver::clear_frame`/`required_bytes` (`src/driver.rs`) computed byte counts with
+  1-bit-per-pixel math for every `ColorChannel` except `Color7`, silently under-computing every
+  `ColorMode::QuadColor` panel's real RAM size. Added a `QuadColor`-aware branch driven by a new
+  `EpdPanel::RAM_WIDTH` const (defaulting to `WIDTH`, overridden by `ZJY122250_0213AJH_E5` to its
+  documented 128px RAM-padded width). Retroactively corrects `ZJY122250_0213AJH_E5`'s `clear_frame`
+  byte count from 4000 to the correct 8000.
+
 ## [0.3.1] - 2026-09-12
 
 ### Fixed
