@@ -21,8 +21,11 @@
 //!   `GxEPD2_154c_GDEM0154F51H.cpp`/`.h`, cross-checked against the JD79660A datasheet (v1.0.3)
 //!   directly for register lengths/defaults (confirms `POF`/`DRF` both take a `0x00` data byte;
 //!   `0x4D`/`0xE7`/`0xE9`/`0xB4`/`0xB5` are undocumented in the public datasheet). No
-//!   `Adafruit_EPD` board exists for this panel/IC (checked — no coverage). **Not yet confirmed
-//!   on physical hardware.**
+//!   `Adafruit_EPD` board exists for this panel/IC (checked — no coverage). **Hardware-verified**
+//!   blocking on RP2350 (`rust-rpico2-discovery`), RP2040 (`adafruit-feather-thinkink-discovery`)
+//!   and ESP32-C3 (`xiao-esp32c3-blinky`), and async on RP2350 (`rust-rpico2-embassy-examples`):
+//!   init/write/refresh/sleep complete cleanly on every host, with a measured full-refresh time of
+//!   ~19.7s on RP2040, matching the panel's quoted ~20s spec.
 //!
 //! ### Vendor References
 //! - Waveshare product page: <https://www.waveshare.com/1.54inch-e-paper-g.htm>

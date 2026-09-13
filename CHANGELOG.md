@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path, then cross-checked directly against the JD79660A datasheet (v1.0.3) for register lengths
   and defaults. Fast-update mode is not implemented — the two reference sources disagree on
   register ordering for it, and the vendor's own demo defaults to the plain path anyway.
-  **Not yet verified on physical hardware.**
+  **Hardware-verified** blocking on RP2350 (`rust-rpico2-discovery`), RP2040
+  (`adafruit-feather-thinkink-discovery`) and ESP32-C3 (`xiao-esp32c3-blinky`), and async on
+  RP2350 (`rust-rpico2-embassy-examples`): init/write/refresh/sleep complete cleanly on every host,
+  ~19.7s measured full refresh on RP2040 against the panel's quoted ~20s spec.
 
 ### Changed
 
@@ -32,7 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DISPLAY_REFRESH` (`0x12`) and `POWER_OFF` (`0x02`) — previously sent bare. Both the JD79660A and
   JD79661AA datasheets document one data byte (default `0x00`) for each command, and Adafruit's own
   `Adafruit_JD79661.cpp` sends it explicitly; only reading the datasheet directly (not just the two
-  vendor C++ references, which happened to agree with each other) surfaced this.
+  vendor C++ references, which happened to agree with each other) surfaced this. Re-verified on
+  the same four hardware-verified hosts as `GDEM0154F51H` above via the existing
+  `ZJY122250_0213AJH_E5` examples — no regression from the byte fix.
 - `EpdDriver::clear_frame`/`required_bytes` (`src/driver.rs`) computed byte counts with
   1-bit-per-pixel math for every `ColorChannel` except `Color7`, silently under-computing every
   `ColorMode::QuadColor` panel's real RAM size. Added a `QuadColor`-aware branch driven by a new
