@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
 ### Added
 
 - **`GDEM0154F51H`** (**`GxEPD2_154c_GDEM0154F51H`**), the Good Display / Waveshare 1.54inch
@@ -512,7 +514,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/melastmohican/epdsi/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/melastmohican/epdsi/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/melastmohican/epdsi/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/melastmohican/epdsi/compare/v0.2.1...v0.2.2
