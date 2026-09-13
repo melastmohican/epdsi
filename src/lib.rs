@@ -35,7 +35,7 @@
 //! | Controller | Panels | Resolution | Colour mode |
 //! | :--- | :--- | :--- | :--- |
 //! | [`Ssd1681Controller`] | [`GDEM0154Z90`] | 200 × 200 | Tri-Color |
-//! | [`Ssd1680Controller`] | [`GDEM0213B74`], [`GDEY0266Z90`] | 122 × 250, 152 × 296 | Monochrome, Tri-Color |
+//! | [`Ssd1680Controller`] | [`GDEM0213B74`], [`GDEY0266Z90`], [`GDEY0266T90`] | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color |
 //! | [`Jd79661Controller`] | [`ZJY122250_0213AJH_E5`] / [`GDEY0213F51`] | 122 × 250 | Quad-Color |
 //! | [`Uc8253Controller`] | [`GDEY037T03`], [`SE0352N14TNGA0`] | 240 × 416, 240 × 360 | Monochrome, Tri-Color |
 //! | [`Ssd1677Controller`] | [`GDEQ0426T82`] | 800 × 480 | Monochrome |
@@ -182,6 +182,7 @@
 //! [`GDEM0154Z90`]: panels::GDEM0154Z90
 //! [`GDEM0213B74`]: panels::GDEM0213B74
 //! [`GDEY0266Z90`]: panels::GDEY0266Z90
+//! [`GDEY0266T90`]: panels::GDEY0266T90
 //! [`ZJY122250_0213AJH_E5`]: panels::ZJY122250_0213AJH_E5
 //! [`GDEY0213F51`]: panels::GDEY0213F51
 //! [`GDEY037T03`]: panels::GDEY037T03

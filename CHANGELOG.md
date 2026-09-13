@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`), the Good Display / Waveshare 2.66" **monochrome**
+  e-Paper module (SSD1680, 152×296) — a different glass from the existing Tri-Color `GDEY0266Z90`
+  of the same nominal size, not a config of it. Purely additive: no controller changes, no
+  `VCOM`/`GATE_VOLTAGE`/`CUSTOM_LUT` override, register-identical init to `GDEY0266Z90` on the
+  default SSD1680 profile — verified against the GxEPD2 reference driver
+  (`GxEPD2_266_GDEY0266T90.cpp`) byte-for-byte. Unlike its Tri-Color sibling, this panel supports a
+  genuine fast partial refresh (`Ssd168xRefreshMode::Partial`, ~500 ms per the reference), not the
+  parity-only no-op partial mode colour panels get. **Not yet verified on physical hardware.**
+
 ## [0.2.2] - 2026-09-12
 
 Tri-Color panels now have two supported drawing modes — `PageBufferPair` (below) is the

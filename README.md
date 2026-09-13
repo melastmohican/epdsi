@@ -27,7 +27,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | Controller IC | Supported Panels | Resolution | Color Mode | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
-| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`) | 122 × 250, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane |
+| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`), `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`) | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane. `GDEY0266T90`: [Good Display GDEY0266T90](https://www.good-display.com/product/412.html) / [Waveshare 2.66" e-Paper](https://www.waveshare.com/2.66inch-e-Paper.htm) — same footprint as `GDEY0266Z90` but **monochrome-only**, and genuinely fast: real Full/FastFull/Partial refresh (~1.7 s / ~500 ms per the reference driver), not the parity-only Partial the Tri-Color sibling has. Not yet hardware-verified in this crate |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
@@ -391,6 +391,32 @@ epd.write_frame(ColorChannel::RedYellow, display.accent().as_slice()).unwrap();
 epd.refresh(&mut delay).unwrap();
 
 // sleep() enters deep sleep; call init() again before the next frame.
+epd.sleep(&mut delay).unwrap();
+```
+
+### 11. Usage Example (Ssd1680Controller + GDEY0266T90 Panel)
+
+```rust,ignore
+use epdsi::prelude::*;
+
+// Same SSD1680 profile as GDEM0213B74 and GDEY0266Z90 above — no variant selection needed.
+// Unlike the Tri-Color GDEY0266Z90, this is a monochrome-only glass: a single PageBuffer, no
+// accent plane, no ink-polarity gymnastics.
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Ssd1680Controller::new(GDEY0266T90::WIDTH, GDEY0266T90::HEIGHT)
+    .with_refresh_mode(Ssd1680RefreshMode::Full);
+
+// Build driver for the Good Display GDEY0266T90 / Waveshare 2.66" e-Paper, 152x296 Monochrome
+let mut epd = EpdBuilder::<_, GDEY0266T90>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+epd.clear_frame(ColorChannel::BlackWhite, 0xFF).unwrap();
+epd.refresh(&mut delay).unwrap();
+
+// Genuinely fast on this panel — unlike the Tri-Color sibling, Partial is a real differential
+// mode here (~500 ms per the GxEPD2 reference), not a parity-only no-op.
+epd.controller_mut().set_refresh_mode(Ssd1680RefreshMode::Partial);
+
 epd.sleep(&mut delay).unwrap();
 ```
 

@@ -162,6 +162,14 @@ fn test_ssd1680_gdey0266z90_panel_dimensions() {
     assert_eq!(GxEPD2_266c::HEIGHT, 296);
 }
 
+#[test]
+fn test_ssd1680_gdey0266t90_panel_dimensions() {
+    assert_eq!(GDEY0266T90::WIDTH, 152);
+    assert_eq!(GDEY0266T90::HEIGHT, 296);
+    assert_eq!(GxEPD2_266_GDEY0266T90::WIDTH, 152);
+    assert_eq!(GxEPD2_266_GDEY0266T90::HEIGHT, 296);
+}
+
 #[maybe_async_cfg::maybe(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
@@ -209,6 +217,57 @@ async fn ssd1680_gdey0266z90_init_sequence_body() {
 epd_test!(
     test_ssd1680_gdey0266z90_init_sequence,
     ssd1680_gdey0266z90_init_sequence_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_gdey0266t90_init_sequence_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1680Controller::new(GDEY0266T90::WIDTH, GDEY0266T90::HEIGHT);
+    let mut delay = DummyDelay;
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    // Same 152x296 dimensions as GDEY0266Z90 on the same default SSD1680 profile, so the byte
+    // stream is identical — this panel declares no VCOM/gate-voltage/LUT override either. Pinned
+    // directly against the GxEPD2_266_GDEY0266T90 reference driver's _InitDisplay(), which writes
+    // the same register set and values (0x3C=0x05, 0x21=[0x00,0x80], 0x18=0x80).
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x12),                // SW_RESET
+            SpiRecord::Command(0x01),                // DRIVER_CONTROL
+            SpiRecord::Data(vec![0x27, 0x01, 0x00]), // 296-1 = 295 = 0x0127
+            SpiRecord::Command(0x3C),                // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x05]),
+            SpiRecord::Command(0x21), // DISPLAY_UPDATE_CTRL1
+            SpiRecord::Data(vec![0x00, 0x80]),
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44),                      // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x12]),             // (152-1)/8 = 18 = 0x12
+            SpiRecord::Command(0x45),                      // SET_RAMYPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0x27, 0x01]), // 295 = 0x0127
+            SpiRecord::Command(0x4E),                      // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1680_gdey0266t90_init_sequence,
+    ssd1680_gdey0266t90_init_sequence_body
 );
 
 #[maybe_async_cfg::maybe(
@@ -359,6 +418,7 @@ async fn ssd1680_init_writes_no_lut_or_vcom_today_body() {
     for (width, height) in [
         (GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT),
         (GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT),
+        (GDEY0266T90::WIDTH, GDEY0266T90::HEIGHT),
     ] {
         let bus_backend = RecordingSpiBus::new();
         let dc = TestDc(&bus_backend);
@@ -428,6 +488,14 @@ async fn ssd1680_for_panel_is_byte_identical_on_both_panels_body() {
         record_ssd1680_init(Ssd1680Controller::new(
             GDEY0266Z90::WIDTH,
             GDEY0266Z90::HEIGHT
+        ))
+        .await,
+    );
+    assert_eq!(
+        record_ssd1680_init(Ssd1680Controller::for_panel::<GDEY0266T90>()).await,
+        record_ssd1680_init(Ssd1680Controller::new(
+            GDEY0266T90::WIDTH,
+            GDEY0266T90::HEIGHT
         ))
         .await,
     );
