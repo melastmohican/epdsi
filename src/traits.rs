@@ -96,6 +96,39 @@ pub enum ColorChannel {
     Color7(u8),
 }
 
+/// Register bundle for Adafruit_EPD-style 4-level grayscale mode on SSD168x-family panels.
+///
+/// Unlike [`VCOM`](EpdPanel::VCOM), [`GATE_VOLTAGE`](EpdPanel::GATE_VOLTAGE) and
+/// [`CUSTOM_LUT`](EpdPanel::CUSTOM_LUT), which each layer a single optional tweak onto a panel's
+/// otherwise-standard monochrome init, Gray4 mode is a wholly different, mutually exclusive
+/// analog/waveform configuration — bundled as one struct so a panel can't declare some of these
+/// registers and silently leave the rest on OTP defaults.
+///
+/// **Provenance**: this is not vendor (Good Display/Waveshare) material. It is transcribed from
+/// Adafruit_EPD's `ThinkInk_266_Grayscale4_MFGN` reference driver, confirmed working on real
+/// hardware. See each panel's `GRAY4` doc comment for the specific citation.
+#[derive(Debug, Clone, Copy)]
+pub struct Gray4Registers {
+    /// VCOM register override (`0x2C`), part of the same waveform-setting block as [`Self::lut`].
+    pub vcom: u8,
+    /// Gate driving voltage override (`0x03`), part of the same waveform-setting block as
+    /// [`Self::lut`].
+    pub gate_voltage: u8,
+    /// Source driving voltage override (`0x04` — `SOURCE_VOLTAGE`, otherwise unused by `epdsi`),
+    /// part of the same waveform-setting block as [`Self::lut`].
+    pub source_voltage: [u8; 3],
+    /// Border waveform control override (`0x3C`), replacing the baseline mono value.
+    pub border_waveform: u8,
+    /// SSD1680 datasheet's "Option for LUT end" (register `0x3F`, WS byte 153 of the unified
+    /// 159-byte waveform-setting block that also covers [`Self::lut`], [`Self::gate_voltage`],
+    /// [`Self::source_voltage`] and [`Self::vcom`]) — a real, datasheet-named register, not a
+    /// magic number, even though Adafruit's own source leaves it commented `// ???`.
+    pub lut_end_option: u8,
+    /// Custom waveform LUT uploaded to `0x32`, sized for 4-level grayscale rather than plain
+    /// monochrome (longer than a standard mono LUT — see the panel's `GRAY4` doc for specifics).
+    pub lut: &'static [u8],
+}
+
 /// Trait representing physical display panel parameters and configuration overrides.
 pub trait EpdPanel {
     /// Physical width of the panel in pixels.
@@ -126,6 +159,13 @@ pub trait EpdPanel {
     /// `None` leaves the panel on its OTP gate voltage.
     const GATE_VOLTAGE: Option<u8> = None;
 
+    /// Optional 4-level grayscale register bundle (SSD168x-family parts only).
+    ///
+    /// `None` — the default — leaves the panel on plain monochrome. Opt-in only: unlike
+    /// `VCOM`/`GATE_VOLTAGE`/`CUSTOM_LUT`, a controller does not read this automatically from
+    /// `for_panel` — it must be passed explicitly via `.with_gray4(P::GRAY4)`, since Gray4 is a
+    /// wholly different, mutually exclusive waveform configuration rather than an additive tweak.
+    const GRAY4: Option<Gray4Registers> = None;
 }
 
 /// Trait encapsulating driver IC command sets, register sequences, and refresh triggers.

@@ -113,6 +113,11 @@
 //! Tri-Color panels, handing the closure a [`PageBufferPair`] per page instead of a single
 //! [`PageBuffer`] — the paged counterpart to the Quick Start example above.
 //!
+//! [`render_paged_gray4`](graphics::render_paged_gray4) is the same pattern again, for SSD168x
+//! panels configured with Adafruit_EPD-sourced 4-level grayscale mode (`GDEY0266T90` today —
+//! see [`Gray4Registers`](traits::Gray4Registers)'s doc for the "not vendor material" caveat),
+//! handing the closure a [`GrayBufferPair`] per page.
+//!
 //! # Colour panels refresh slowly, and that is physics
 //!
 //! Tri-Color and Quad-Color panels have no fast differential waveform. The coloured
@@ -195,6 +200,7 @@
 //! [`E2417QS0A3`]: panels::E2417QS0A3
 //! [`PageBuffer`]: graphics::PageBuffer
 //! [`PageBufferPair`]: graphics::PageBufferPair
+//! [`GrayBufferPair`]: graphics::GrayBufferPair
 //! [`embedded-hal`]: https://docs.rs/embedded-hal/1.0.0/embedded_hal/
 //! [`rust-rpico2-discovery`]: https://github.com/melastmohican/rust-rpico2-discovery
 //! [`rust-reterminal-e1002-examples`]: https://github.com/melastmohican/rust-reterminal-e1002-examples

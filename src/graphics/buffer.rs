@@ -228,12 +228,20 @@ impl PlanePolarity {
     /// The background (non-ink) fill byte for the Black/White plane under this polarity —
     /// `0xFF` if ink is the cleared bit, `0x00` if ink is the set bit.
     pub const fn bw_background_byte(&self) -> u8 {
-        if self.bw_ink_is_set_bit { 0x00 } else { 0xFF }
+        if self.bw_ink_is_set_bit {
+            0x00
+        } else {
+            0xFF
+        }
     }
 
     /// The background (non-ink) fill byte for the accent plane under this polarity.
     pub const fn accent_background_byte(&self) -> u8 {
-        if self.accent_ink_is_set_bit { 0x00 } else { 0xFF }
+        if self.accent_ink_is_set_bit {
+            0x00
+        } else {
+            0xFF
+        }
     }
 }
 
@@ -275,7 +283,8 @@ impl<'a> PageBufferPair<'a> {
     /// wrong since each plane's is derived from `polarity` rather than passed in.
     pub fn clear(&mut self) {
         self.bw.clear_byte(self.polarity.bw_background_byte());
-        self.accent.clear_byte(self.polarity.accent_background_byte());
+        self.accent
+            .clear_byte(self.polarity.accent_background_byte());
     }
 
     /// Sets the rotation on both planes together.
@@ -332,6 +341,186 @@ impl<'a> Dimensions for PageBufferPair<'a> {
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
 impl<'a> DrawTarget for PageBufferPair<'a> {
     type Color = TriColor;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(point, color) in pixels {
+            if point.x >= 0 && point.y >= 0 {
+                self.set_pixel(point.x as u32, point.y as u32, color);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The four-level grayscale palette an SSD168x panel's two RAM planes render together when
+/// configured for Adafruit_EPD-style Gray4 mode (see
+/// [`Gray4Registers`](crate::traits::Gray4Registers)/[`EpdPanel::GRAY4`](crate::traits::EpdPanel::GRAY4)).
+///
+/// Named and ordered after Adafruit_EPD's own `layer_colors` (`Adafruit_EPD.cpp`):
+/// `WHITE=0b00, LIGHT=0b01, DARK=0b10, BLACK=0b11`, where the low bit is the Black/White plane and
+/// the high bit is the Red/Yellow plane, reused here as two independent grayscale bit-planes
+/// rather than two colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Gray4Color {
+    /// White — both planes clear (`0b00`).
+    #[default]
+    White,
+    /// Light gray — Black/White plane set, Red/Yellow plane clear (`0b01`).
+    Light,
+    /// Dark gray — Black/White plane clear, Red/Yellow plane set (`0b10`).
+    Dark,
+    /// Black — both planes set (`0b11`).
+    Black,
+}
+
+impl Gray4Color {
+    /// Splits this color into its (Black/White plane bit, Red/Yellow plane bit) code, matching
+    /// Adafruit_EPD's `layer_colors` bit layout.
+    const fn plane_bits(self) -> (bool, bool) {
+        match self {
+            Gray4Color::White => (false, false),
+            Gray4Color::Light => (true, false),
+            Gray4Color::Dark => (false, true),
+            Gray4Color::Black => (true, true),
+        }
+    }
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl PixelColor for Gray4Color {
+    type Raw = ();
+}
+
+/// Which raw RAM bit means "set" on each of a Gray4 panel's two planes, same role as
+/// [`PlanePolarity`] plays for [`TriColor`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gray4Polarity {
+    /// `true` if a *set* bit (rather than a cleared one) means the Black/White plane's code bit
+    /// is 1.
+    pub plane_a_ink_is_set_bit: bool,
+    /// `true` if a *set* bit (rather than a cleared one) means the Red/Yellow plane's code bit
+    /// is 1.
+    pub plane_b_ink_is_set_bit: bool,
+}
+
+impl Gray4Polarity {
+    /// Adafruit's SSD1680 Gray4 convention: neither plane inverted, so the raw RAM bit equals
+    /// the code bit directly (`WHITE=00, LIGHT=01, DARK=10, BLACK=11`).
+    pub const ADAFRUIT_SSD1680: Self = Self {
+        plane_a_ink_is_set_bit: true,
+        plane_b_ink_is_set_bit: true,
+    };
+
+    /// The background (`Gray4Color::White`) fill byte for the Black/White plane under this
+    /// polarity.
+    pub const fn plane_a_background_byte(&self) -> u8 {
+        if self.plane_a_ink_is_set_bit {
+            0x00
+        } else {
+            0xFF
+        }
+    }
+
+    /// The background (`Gray4Color::White`) fill byte for the Red/Yellow plane under this
+    /// polarity.
+    pub const fn plane_b_background_byte(&self) -> u8 {
+        if self.plane_b_ink_is_set_bit {
+            0x00
+        } else {
+            0xFF
+        }
+    }
+}
+
+/// A pair of [`PageBuffer`]s addressing an SSD168x panel's Black/White and Red/Yellow RAM planes
+/// together as one `DrawTarget<Color = Gray4Color>`, for panels configured with Adafruit_EPD-style
+/// Gray4 mode. Structurally identical to [`PageBufferPair`], but with four colors mapped onto the
+/// two planes as a genuine 2-bit code rather than three colors with one "unused" combination.
+pub struct GrayBufferPair<'a> {
+    plane_a: PageBuffer<'a>,
+    plane_b: PageBuffer<'a>,
+    polarity: Gray4Polarity,
+}
+
+impl<'a> GrayBufferPair<'a> {
+    /// Creates a new `GrayBufferPair` wrapping the Black/White and Red/Yellow plane buffers for
+    /// one page. Both buffers must be at least `width.div_ceil(8) * height` bytes long.
+    pub fn new(
+        plane_a_buffer: &'a mut [u8],
+        plane_b_buffer: &'a mut [u8],
+        width: u32,
+        height: u32,
+        y_offset: u32,
+        polarity: Gray4Polarity,
+    ) -> Self {
+        Self {
+            plane_a: PageBuffer::new(plane_a_buffer, width, height, y_offset),
+            plane_b: PageBuffer::new(plane_b_buffer, width, height, y_offset),
+            polarity,
+        }
+    }
+
+    /// Resets both planes to `Gray4Color::White`, per this pair's `polarity`.
+    pub fn clear(&mut self) {
+        self.plane_a
+            .clear_byte(self.polarity.plane_a_background_byte());
+        self.plane_b
+            .clear_byte(self.polarity.plane_b_background_byte());
+    }
+
+    /// Sets the rotation on both planes together.
+    pub fn set_rotation(&mut self, rotation: DisplayRotation) {
+        self.plane_a.set_rotation(rotation);
+        self.plane_b.set_rotation(rotation);
+    }
+
+    /// Returns the current rotation.
+    pub fn rotation(&self) -> DisplayRotation {
+        self.plane_a.rotation()
+    }
+
+    /// Access the Black/White plane buffer.
+    pub fn plane_a(&self) -> &PageBuffer<'a> {
+        &self.plane_a
+    }
+
+    /// Access the Red/Yellow plane buffer.
+    pub fn plane_b(&self) -> &PageBuffer<'a> {
+        &self.plane_b
+    }
+
+    /// Sets one pixel to `color`, writing both planes' code bits together so a pixel redrawn
+    /// with a different color does not leave a stale bit behind on either plane.
+    ///
+    /// Coordinate (x, y) is in absolute display space, same as [`PageBuffer::set_pixel`]. See
+    /// [`PageBufferPair::set_pixel`]'s doc for why the `!=` below is the right polarity XOR.
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: Gray4Color) {
+        let (plane_a_bit, plane_b_bit) = color.plane_bits();
+        self.plane_a
+            .set_pixel(x, y, plane_a_bit != self.polarity.plane_a_ink_is_set_bit);
+        self.plane_b
+            .set_pixel(x, y, plane_b_bit != self.polarity.plane_b_ink_is_set_bit);
+    }
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl<'a> Dimensions for GrayBufferPair<'a> {
+    fn bounding_box(&self) -> Rectangle {
+        self.plane_a.bounding_box()
+    }
+}
+
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+impl<'a> DrawTarget for GrayBufferPair<'a> {
+    type Color = Gray4Color;
     type Error = core::convert::Infallible;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>

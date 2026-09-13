@@ -222,7 +222,11 @@ mod page_buffer_pair {
             pair.set_pixel(0, 0, TriColor::Black);
         }
 
-        assert_eq!(bw[0] & 0x80, 0x00, "black bit should be cleared on bw plane");
+        assert_eq!(
+            bw[0] & 0x80,
+            0x00,
+            "black bit should be cleared on bw plane"
+        );
         assert_eq!(
             accent[0] & 0x80,
             0x00,
@@ -244,7 +248,11 @@ mod page_buffer_pair {
                 .unwrap();
         }
 
-        assert_eq!(accent[0] & 0x40, 0x40, "accent ink is the set bit on this polarity");
+        assert_eq!(
+            accent[0] & 0x40,
+            0x40,
+            "accent ink is the set bit on this polarity"
+        );
         assert_eq!(bw[0] & 0x40, 0x40, "bw plane stays at background");
     }
 
@@ -266,8 +274,16 @@ mod page_buffer_pair {
         // Under UC8253 polarity ink is the *set* bit on both planes, so Black now sets the bw
         // bit (opposite of SSD168X, where the same call clears it).
         assert_eq!(bw[0] & 0x80, 0x80, "UC8253 bw ink is the set bit");
-        assert_eq!(accent[0] & 0x80, 0x00, "bw draw must leave accent at background");
-        assert_eq!(bw[0] & 0x40, 0x00, "accent draw must leave bw at background");
+        assert_eq!(
+            accent[0] & 0x80,
+            0x00,
+            "bw draw must leave accent at background"
+        );
+        assert_eq!(
+            bw[0] & 0x40,
+            0x00,
+            "accent draw must leave bw at background"
+        );
         assert_eq!(accent[0] & 0x40, 0x40, "UC8253 accent ink is the set bit");
     }
 
@@ -285,8 +301,14 @@ mod page_buffer_pair {
             pair.clear();
         }
 
-        assert_eq!(bw, [0xFFu8; 4], "bw plane must be back at its own background (0xFF)");
-        assert_eq!(accent, [0x00u8; 4], "accent plane must be back at its own background (0x00)");
+        assert_eq!(
+            bw, [0xFFu8; 4],
+            "bw plane must be back at its own background (0xFF)"
+        );
+        assert_eq!(
+            accent, [0x00u8; 4],
+            "accent plane must be back at its own background (0x00)"
+        );
     }
 
     /// `bounding_box` must reflect the shared width/height/`y_offset`, the same as a plain
@@ -296,6 +318,179 @@ mod page_buffer_pair {
         let mut bw = [0xFFu8; 4];
         let mut accent = [0x00u8; 4];
         let pair = PageBufferPair::new(&mut bw, &mut accent, 32, 4, 8, PlanePolarity::SSD168X);
+
+        let bb = pair.bounding_box();
+        assert_eq!(bb.top_left, Point::new(0, 8));
+        assert_eq!(bb.size, Size::new(32, 4));
+    }
+}
+
+/// Regression tests for [`GrayBufferPair`] / [`Gray4Color`] / [`Gray4Polarity`] — the paired
+/// Black/White + Red/Yellow plane draw target Adafruit_EPD-style Gray4 mode reuses.
+///
+/// `Gray4Polarity::ADAFRUIT_SSD1680` (neither plane inverted — a *set* bit is the code bit
+/// directly) is the only convention `epdsi` has evidence for so far (`GDEY0266T90`).
+mod gray_buffer_pair {
+    use super::*;
+
+    /// Each `Gray4Color` variant must write the exact (plane_a, plane_b) code bits Adafruit_EPD's
+    /// `layer_colors` uses: `White=00, Light=01, Dark=10, Black=11`.
+    #[test]
+    fn each_color_writes_its_own_two_bit_code() {
+        let mut plane_a = [0x00u8; 4];
+        let mut plane_b = [0x00u8; 4];
+        {
+            let mut pair = GrayBufferPair::new(
+                &mut plane_a,
+                &mut plane_b,
+                32,
+                1,
+                0,
+                Gray4Polarity::ADAFRUIT_SSD1680,
+            );
+            pair.set_pixel(0, 0, Gray4Color::White);
+            pair.set_pixel(1, 0, Gray4Color::Light);
+            pair.set_pixel(2, 0, Gray4Color::Dark);
+            pair.set_pixel(3, 0, Gray4Color::Black);
+        }
+
+        // White: both planes clear.
+        assert_eq!(plane_a[0] & 0x80, 0x00);
+        assert_eq!(plane_b[0] & 0x80, 0x00);
+        // Light: plane_a set, plane_b clear.
+        assert_eq!(plane_a[0] & 0x40, 0x40);
+        assert_eq!(plane_b[0] & 0x40, 0x00);
+        // Dark: plane_a clear, plane_b set.
+        assert_eq!(plane_a[0] & 0x20, 0x00);
+        assert_eq!(plane_b[0] & 0x20, 0x20);
+        // Black: both planes set.
+        assert_eq!(plane_a[0] & 0x10, 0x10);
+        assert_eq!(plane_b[0] & 0x10, 0x10);
+    }
+
+    /// Redrawing a pixel with a different color must not leave a stale bit on either plane.
+    #[test]
+    fn redrawing_a_pixel_clears_the_previous_colors_bits() {
+        let mut plane_a = [0x00u8; 4];
+        let mut plane_b = [0x00u8; 4];
+        {
+            let mut pair = GrayBufferPair::new(
+                &mut plane_a,
+                &mut plane_b,
+                32,
+                1,
+                0,
+                Gray4Polarity::ADAFRUIT_SSD1680,
+            );
+            pair.set_pixel(0, 0, Gray4Color::Black);
+            pair.set_pixel(0, 0, Gray4Color::White);
+        }
+
+        assert_eq!(
+            plane_a[0] & 0x80,
+            0x00,
+            "plane_a must be cleared back to White's code bit"
+        );
+        assert_eq!(
+            plane_b[0] & 0x80,
+            0x00,
+            "plane_b must be cleared back to White's code bit"
+        );
+    }
+
+    /// `GrayBufferPair` must work as an `embedded-graphics` `DrawTarget<Color = Gray4Color>`, not
+    /// just through its own `set_pixel`.
+    #[test]
+    fn draw_target_routes_pixels_to_both_planes() {
+        let mut plane_a = [0x00u8; 4];
+        let mut plane_b = [0x00u8; 4];
+        {
+            let mut pair = GrayBufferPair::new(
+                &mut plane_a,
+                &mut plane_b,
+                32,
+                1,
+                0,
+                Gray4Polarity::ADAFRUIT_SSD1680,
+            );
+            Pixel(Point::new(0, 0), Gray4Color::Dark)
+                .draw(&mut pair)
+                .unwrap();
+        }
+
+        assert_eq!(plane_a[0] & 0x80, 0x00, "Dark leaves plane_a clear");
+        assert_eq!(plane_b[0] & 0x80, 0x80, "Dark sets plane_b");
+    }
+
+    /// An inverted polarity must flip both planes' code bits, the same way
+    /// [`PlanePolarity::UC8253`] flips `PageBufferPair`'s Black/White plane.
+    #[test]
+    fn inverted_polarity_flips_both_planes_code_bits() {
+        let inverted = Gray4Polarity {
+            plane_a_ink_is_set_bit: false,
+            plane_b_ink_is_set_bit: false,
+        };
+        let mut plane_a = [0xFFu8; 4];
+        let mut plane_b = [0xFFu8; 4];
+        {
+            let mut pair = GrayBufferPair::new(&mut plane_a, &mut plane_b, 32, 1, 0, inverted);
+            pair.set_pixel(0, 0, Gray4Color::Black);
+        }
+
+        assert_eq!(
+            plane_a[0] & 0x80,
+            0x00,
+            "inverted polarity clears the bit for a set code bit"
+        );
+        assert_eq!(
+            plane_b[0] & 0x80,
+            0x00,
+            "inverted polarity clears the bit for a set code bit"
+        );
+    }
+
+    /// `clear` must reset both planes to their own background byte under this pair's `polarity`.
+    #[test]
+    fn clear_resets_both_planes_to_their_own_background() {
+        let mut plane_a = [0xFFu8; 4];
+        let mut plane_b = [0xFFu8; 4];
+        {
+            let mut pair = GrayBufferPair::new(
+                &mut plane_a,
+                &mut plane_b,
+                32,
+                1,
+                0,
+                Gray4Polarity::ADAFRUIT_SSD1680,
+            );
+            pair.set_pixel(0, 0, Gray4Color::Black);
+            pair.clear();
+        }
+
+        assert_eq!(
+            plane_a, [0x00u8; 4],
+            "plane_a must be back at its own background (0x00)"
+        );
+        assert_eq!(
+            plane_b, [0x00u8; 4],
+            "plane_b must be back at its own background (0x00)"
+        );
+    }
+
+    /// `bounding_box` must reflect the shared width/height/`y_offset`, the same as
+    /// `PageBufferPair`.
+    #[test]
+    fn bounding_box_matches_the_shared_page_geometry() {
+        let mut plane_a = [0x00u8; 4];
+        let mut plane_b = [0x00u8; 4];
+        let pair = GrayBufferPair::new(
+            &mut plane_a,
+            &mut plane_b,
+            32,
+            4,
+            8,
+            Gray4Polarity::ADAFRUIT_SSD1680,
+        );
 
         let bb = pair.bounding_box();
         assert_eq!(bb.top_left, Point::new(0, 8));

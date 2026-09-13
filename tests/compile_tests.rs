@@ -24,7 +24,10 @@ async fn ssd1681_epd_driver_instantiation_and_paged_rendering_body() {
     assert_eq!(driver.width(), 200);
     assert_eq!(driver.height(), 200);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     driver
         .clear_frame(ColorChannel::BlackWhite, 0xFF)
@@ -69,7 +72,10 @@ async fn uc8253_se0352n14_epd_driver_instantiation_and_paged_rendering_body() {
     assert_eq!(driver.width(), 240);
     assert_eq!(driver.height(), 360);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     // Both planes clear to 0x00 on this panel: set bits are ink, not the mono convention.
     driver
@@ -118,7 +124,10 @@ async fn ssd1680_gdey0266z90_epd_driver_instantiation_and_paged_rendering_body()
     assert_eq!(driver.width(), 152);
     assert_eq!(driver.height(), 296);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     // The Red plane is inverted relative to the Black/White plane: 0xFF is white in 0x24, but
     // 0x00 is *no* red in 0x26.
@@ -165,7 +174,10 @@ async fn ssd1680_gdey0266z90_tri_color_paged_rendering_body() {
     let controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
     let mut driver = EpdBuilder::<_, GDEY0266Z90>::new(controller).build(bus);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     driver
         .clear_frame(ColorChannel::BlackWhite, 0xFF)
@@ -205,6 +217,51 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn ssd1680_gdey0266t90_gray4_paged_rendering_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Ssd1680Controller::for_panel::<GDEY0266T90>()
+        .with_gray4(GDEY0266T90::GRAY4)
+        .with_refresh_mode(Ssd168xRefreshMode::Gray4);
+    let mut driver = EpdBuilder::<_, GDEY0266T90>::new(controller).build(bus);
+
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
+
+    // 152 is byte-aligned: 19 bytes per line, one buffer per plane, 8-row page.
+    let mut plane_a_page_buffer = [0u8; (152 / 8) * 8];
+    let mut plane_b_page_buffer = [0u8; (152 / 8) * 8];
+    render_paged_gray4(
+        &mut driver,
+        &mut delay,
+        (&mut plane_a_page_buffer, &mut plane_b_page_buffer),
+        Gray4Polarity::ADAFRUIT_SSD1680,
+        8,
+        |page_buf| {
+            let y = page_buf.plane_a().y_offset() + 2;
+            page_buf.set_pixel(10, y, Gray4Color::White);
+            page_buf.set_pixel(11, y, Gray4Color::Light);
+            page_buf.set_pixel(12, y, Gray4Color::Dark);
+            page_buf.set_pixel(13, y, Gray4Color::Black);
+        },
+    )
+    .await
+    .expect("Gray4 paged rendering failed");
+}
+epd_test!(
+    test_ssd1680_gdey0266t90_gray4_paged_rendering,
+    ssd1680_gdey0266t90_gray4_paged_rendering_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn jd79661_epd_driver_instantiation_and_paged_rendering_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
@@ -218,7 +275,10 @@ async fn jd79661_epd_driver_instantiation_and_paged_rendering_body() {
     assert_eq!(driver.width(), 122);
     assert_eq!(driver.height(), 250);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     driver
         .clear_frame(ColorChannel::BlackWhite, 0xFF)
@@ -263,7 +323,10 @@ async fn pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering_body(
     assert_eq!(driver.width(), 152);
     assert_eq!(driver.height(), 296);
 
-    driver.init(&mut delay).await.expect("Initialization failed");
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
 
     driver
         .clear_frame(ColorChannel::BlackWhite, 0xFF)

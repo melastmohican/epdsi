@@ -6,7 +6,9 @@ use embedded_hal::delay::DelayNs;
 use embedded_hal_async::delay::DelayNs;
 
 use crate::driver::EpdDriver;
-use crate::graphics::buffer::{PageBuffer, PageBufferPair, PlanePolarity};
+use crate::graphics::buffer::{
+    Gray4Polarity, GrayBufferPair, PageBuffer, PageBufferPair, PlanePolarity,
+};
 use crate::traits::{ColorChannel, EpdController, EpdPanel};
 
 /// Executes a GxEPD2-style paged rendering loop over display sub-regions.
@@ -63,9 +65,7 @@ where
         // Configure hardware display window and write page chunk to RAM
         driver.set_window(0, y_start, width - 1, y_end).await?;
         driver.set_cursor(0, y_start).await?;
-        driver
-            .write_frame(channel, page_buf.as_slice())
-            .await?;
+        driver.write_frame(channel, page_buf.as_slice()).await?;
     }
 
     // Trigger physical display update
@@ -144,6 +144,85 @@ where
         driver.set_cursor(0, y_start).await?;
         driver
             .write_frame(accent_channel, page_buf.accent().as_slice())
+            .await?;
+    }
+
+    // Trigger physical display update
+    driver.refresh(delay).await
+}
+
+/// Gray4 counterpart of [`render_paged`]: sweeps the panel page-by-page like `render_paged` does,
+/// but hands the drawing closure a [`GrayBufferPair`] so one `embedded-graphics` pass can address
+/// both RAM planes together as a 4-level grayscale code, then writes each plane to its own channel
+/// before advancing to the next page.
+///
+/// For panels configured with Adafruit_EPD-style Gray4 mode (see
+/// [`Gray4Registers`](crate::traits::Gray4Registers)/[`EpdPanel::GRAY4`]
+/// and [`Ssd168xRefreshMode::Gray4`](crate::controllers::Ssd168xRefreshMode::Gray4)) — the
+/// controller's `refresh_mode` must already be set to `Gray4` before calling this, same as any
+/// other refresh mode/render function pairing.
+///
+/// `page_buffers` is `(plane_a_page_buffer, plane_b_page_buffer)` — the Black/White and
+/// Red/Yellow plane buffers respectively, each sized for one page, same as
+/// [`render_paged_tri_color`]. Unlike that function, the two RAM channels are fixed
+/// (`ColorChannel::BlackWhite`/`ColorChannel::RedYellow`) rather than taking an `accent_channel`
+/// parameter, since Gray4 mode always reuses exactly those two planes as its bit-planes.
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+pub async fn render_paged_gray4<BUS, CONTROLLER, PANEL, DELAY, F>(
+    driver: &mut EpdDriver<BUS, CONTROLLER, PANEL>,
+    delay: &mut DELAY,
+    page_buffers: (&mut [u8], &mut [u8]),
+    polarity: Gray4Polarity,
+    page_height: u32,
+    mut draw_fn: F,
+) -> Result<(), CONTROLLER::Error>
+where
+    CONTROLLER: EpdController<BUS>,
+    PANEL: EpdPanel,
+    DELAY: DelayNs,
+    F: FnMut(&mut GrayBufferPair),
+{
+    let (plane_a_page_buffer, plane_b_page_buffer) = page_buffers;
+    let width = PANEL::WIDTH;
+    let height = PANEL::HEIGHT;
+
+    let total_pages = height.div_ceil(page_height);
+
+    for page_idx in 0..total_pages {
+        let y_start = page_idx * page_height;
+        let y_end = (y_start + page_height).min(height) - 1;
+        let current_page_height = y_end - y_start + 1;
+
+        let required_bytes = width.div_ceil(8) as usize * current_page_height as usize;
+
+        plane_a_page_buffer[..required_bytes].fill(polarity.plane_a_background_byte());
+        plane_b_page_buffer[..required_bytes].fill(polarity.plane_b_background_byte());
+
+        let mut page_buf = GrayBufferPair::new(
+            &mut plane_a_page_buffer[..required_bytes],
+            &mut plane_b_page_buffer[..required_bytes],
+            width,
+            current_page_height,
+            y_start,
+            polarity,
+        );
+
+        // Invoke user drawing closure
+        draw_fn(&mut page_buf);
+
+        // Configure hardware display window once, then write each plane to its own channel —
+        // the window/cursor registers are shared state, selected per write by `channel` alone.
+        driver.set_window(0, y_start, width - 1, y_end).await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::BlackWhite, page_buf.plane_a().as_slice())
+            .await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::RedYellow, page_buf.plane_b().as_slice())
             .await?;
     }
 

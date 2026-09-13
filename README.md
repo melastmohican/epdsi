@@ -27,7 +27,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | Controller IC | Supported Panels | Resolution | Color Mode | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **SSD1681** (`Ssd1681Controller` / `Ssd168xController`) | `GDEM0154Z90` | 200 × 200 | Tri-Color | 1.54" Tri-Color SPI panel, Full refresh only (~14 s). `Ssd168xRefreshMode::Partial` is **not** usable — see [note below](#tri-color-panels-and-partial-refresh). Partial *window* updates work via `set_window` at full-refresh speed |
-| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`), `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`) | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane. `GDEY0266T90`: [Good Display GDEY0266T90](https://www.good-display.com/product/412.html) / [Waveshare 2.66" e-Paper](https://www.waveshare.com/2.66inch-e-Paper.htm) — same footprint as `GDEY0266Z90` but **monochrome-only**, and genuinely fast: real Full/FastFull/Partial refresh (~1.7 s / ~500 ms per the reference driver), not the parity-only Partial the Tri-Color sibling has. Not yet hardware-verified in this crate |
+| **SSD1680(Z)** (`Ssd1680Controller` / `Ssd168xController`) | `GDEM0213B74`, `GDEY0266Z90` (`GxEPD2_266c`), `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`) | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color | `GDEM0213B74`: 2.13" Monochrome (Adafruit 6383), Full/FastFull/Partial refresh. `GDEY0266Z90`: [Good Display GDEY0266Z90](https://www.good-display.com/product/430.html) / [Waveshare 2.66" e-Paper Module (B)](https://www.waveshare.com/2.66inch-e-Paper-B.htm), full refresh only (~18–20 s) — see [note below](#tri-color-panels-and-partial-refresh). Its Red RAM plane is **inverted** relative to the Black/White plane. `GDEY0266T90`: [Good Display GDEY0266T90](https://www.good-display.com/product/412.html) / [Waveshare 2.66" e-Paper](https://www.waveshare.com/2.66inch-e-Paper.htm) — same footprint as `GDEY0266Z90` but **monochrome-only**, and genuinely fast: real Full/Partial refresh, not the parity-only Partial the Tri-Color sibling has (`FastFull` also supported, not yet cleanly measured). Hardware-verified blocking on RP2350, RP2040 and ESP32-C3, and async on RP2350: `Full` and `Partial` both render correctly, though `Partial` measured ~4.1 s per update on the original RP2350 unit, not the ~500 ms the reference driver quotes. Also supports [4-level grayscale](#4-level-grayscale-gray4-on-gdey0266t90) via `GRAY4`/`Ssd168xRefreshMode::Gray4` — Adafruit_EPD-sourced, not Good Display/Waveshare — hardware-verified through `epdsi`'s own driver across the same RP2350/RP2040/ESP32-C3 blocking + RP2350 async spread |
 | **JD79661** (`Jd79661Controller`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
 | **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
@@ -129,7 +129,7 @@ deprecated since 0.1.6 are removed) alongside the new async API below — see th
 | Feature | Default | Description |
 | :--- | :---: | :--- |
 | `blocking` | yes | The plain `embedded-hal` 1.0 API used in every example below. Disabling it (`default-features = false`, then re-add `graphics` if wanted) switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead — same types, same method names, same `Result`s, just `.await`ed. |
-| `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer` and `PageBufferPair`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer`/`PageBufferPair` and `render_paged`/`render_paged_tri_color` still work, you just draw into the buffer(s) yourself. |
+| `graphics` | yes | Implements `embedded-graphics-core`'s `DrawTarget` and `Dimensions` for `PageBuffer`, `PageBufferPair` and `GrayBufferPair`. Disable it to drop the `embedded-graphics-core` dependency; `PageBuffer`/`PageBufferPair`/`GrayBufferPair` and `render_paged`/`render_paged_tri_color`/`render_paged_gray4` still work, you just draw into the buffer(s) yourself. |
 | `defmt` | no | Derives `defmt::Format` on the public error and mode enums (`EpdBusError`, `Spi3BusError`, `PervasiveBwryOtpError`, `ColorMode`, `ColorChannel`, `SevenColor`, and the per-controller refresh/variant enums) for logging on embedded targets. |
 
 `blocking` and the async API it replaces are mutually exclusive, not additive — a bus is one or
@@ -420,6 +420,43 @@ epd.controller_mut().set_refresh_mode(Ssd1680RefreshMode::Partial);
 epd.sleep(&mut delay).unwrap();
 ```
 
+#### 4-level grayscale (Gray4) on `GDEY0266T90`
+
+`GDEY0266T90` can also drive 4 distinguishable gray levels instead of plain 1-bit monochrome, via
+a register bundle **not from Good Display/Waveshare** — Waveshare's own spec lists 2 grayscale
+levels. It is transcribed verbatim from Adafruit_EPD's `ThinkInk_266_Grayscale4_MFGN` reference
+driver, and confirmed rendering four distinct gray bands through `epdsi`'s own from-scratch,
+init-once port too — hardware-verified blocking on RP2350, RP2040 and ESP32-C3, and async on
+RP2350 — see [`GDEY0266T90`]'s doc for the full provenance note.
+
+```rust,ignore
+use epdsi::prelude::*;
+
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Ssd1680Controller::for_panel::<GDEY0266T90>()
+    .with_gray4(GDEY0266T90::GRAY4)
+    .with_refresh_mode(Ssd168xRefreshMode::Gray4);
+let mut epd = EpdBuilder::<_, GDEY0266T90>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+let mut plane_a = [0u8; (152 / 8) * 8];
+let mut plane_b = [0u8; (152 / 8) * 8];
+render_paged_gray4(
+    &mut epd,
+    &mut delay,
+    (&mut plane_a, &mut plane_b),
+    Gray4Polarity::ADAFRUIT_SSD1680,
+    8,
+    |page_buf| {
+        page_buf.set_pixel(10, page_buf.plane_a().y_offset() + 2, Gray4Color::Dark);
+    },
+)
+.unwrap();
+```
+
+[`GDEY0266T90`]: https://docs.rs/epdsi/latest/epdsi/panels/struct.GDEY0266T90.html
+
 ## Examples on real hardware
 
 The snippets above are `rust,ignore` because they need real SPI and GPIO. For complete,
@@ -444,6 +481,8 @@ async producing the same on-panel result from the same driver code:
 | [`Ssd1681Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1681_gdem0154z90_epd.rs) | `GDEM0154Z90` — 1.54" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdem0213b74_epd.rs) | `GDEM0213B74` — 2.13" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266z90_epd.rs) | `GDEY0266Z90` — 2.66" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266t90_epd.rs) | `GDEY0266T90` — 2.66" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1680Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1680_gdey0266t90_gray4_epd.rs) | `GDEY0266T90` — 2.66" Gray4 | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Jd79661Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/jd79661_zjy122250_epd.rs) | `ZJY122250_0213AJH_E5` — 2.13" Quad-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `GDEY037T03` — 3.7" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |

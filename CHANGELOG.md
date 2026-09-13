@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-12
+
 ### Added
 
 - `GDEY0266T90` (`GxEPD2_266_GDEY0266T90`), the Good Display / Waveshare 2.66" **monochrome**
@@ -16,7 +18,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default SSD1680 profile — verified against the GxEPD2 reference driver
   (`GxEPD2_266_GDEY0266T90.cpp`) byte-for-byte. Unlike its Tri-Color sibling, this panel supports a
   genuine fast partial refresh (`Ssd168xRefreshMode::Partial`, ~500 ms per the reference), not the
-  parity-only no-op partial mode colour panels get. **Not yet verified on physical hardware.**
+  parity-only no-op partial mode colour panels get. **Hardware-verified** blocking on RP2350
+  (`rust-rpico2-discovery`), RP2040 (`adafruit-feather-thinkink-discovery`) and ESP32-C3
+  (`xiao-esp32c3-blinky`), and async on RP2350 (`rust-rpico2-embassy-examples`): `Full` and
+  `Partial` both render correctly on every host, though `Partial` measured ~4.1 s per update on the
+  original RP2350 unit — not the sub-second figure GxEPD2 quotes, so treat that reference number as
+  panel/glass-dependent rather than assumed.
+
+- 4-level grayscale (Gray4) support for SSD168x panels, starting with `GDEY0266T90`:
+  `Gray4Registers`/`EpdPanel::GRAY4` (`src/traits.rs`), `Ssd168xController::with_gray4`/`gray4()`
+  and `Ssd168xRefreshMode::Gray4` (`src/controllers/ssd168x.rs`), and `Gray4Color`/
+  `Gray4Polarity`/`GrayBufferPair`/`render_paged_gray4` (`src/graphics`) — structural mirrors of
+  the existing Tri-Color `TriColor`/`PlanePolarity`/`PageBufferPair`/`render_paged_tri_color`.
+
+  **Provenance, worth stating plainly**: `GDEY0266T90::GRAY4` is *not* Good Display/Waveshare
+  material — Waveshare's own spec lists 2 grayscale levels, and the GxEPD2 reference driver never
+  writes a grayscale LUT. It is transcribed verbatim from Adafruit_EPD's
+  `ThinkInk_266_Grayscale4_MFGN` reference driver (`ti_266mfgn_gray4_init_code`/
+  `ti_266mfgn_gray4_lut_code`, a 233-byte custom waveform LUT), confirmed rendering four distinct
+  gray levels on real hardware (a XIAO MG24 driving this exact panel). One register in the bundle
+  (`0x3F`) is undocumented by Adafruit's own source (`// ???`) but is confirmed against the actual
+  SSD1680 datasheet (Solomon Systech Rev 0.14) as "Option for LUT end" — a real, named register,
+  part of the same unified waveform-setting block as the LUT/gate/source/VCOM registers, not a
+  magic number. Gray4 is opt-in only: `for_panel` does not read `GRAY4` automatically, since it is
+  a wholly different, mutually exclusive waveform configuration rather than an additive tweak like
+  `VCOM`/`GATE_VOLTAGE`/`CUSTOM_LUT`. **Hardware-verified through `epdsi`'s own driver**, blocking
+  on RP2350, RP2040 and ESP32-C3 and async on RP2350 (same four repos as above) — all four gray
+  levels render distinctly on real glass on every host, not just through Adafruit's own driver.
 
 ## [0.2.2] - 2026-09-12
 
@@ -431,7 +459,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/melastmohican/epdsi/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/melastmohican/epdsi/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/melastmohican/epdsi/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/melastmohican/epdsi/compare/v0.1.7...v0.2.0

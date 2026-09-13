@@ -274,6 +274,71 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn ssd1680_gdey0266t90_gray4_init_sequence_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller =
+        Ssd1680Controller::for_panel::<GDEY0266T90>().with_gray4(GDEY0266T90::GRAY4);
+    let mut delay = DummyDelay;
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    let gray4 = GDEY0266T90::GRAY4.unwrap();
+    assert_eq!(gray4.lut.len(), 233);
+
+    // Gray4's analog/waveform block (border/gate/source/lut-end/vcom/LUT) entirely replaces the
+    // baseline block (0x3C=0x05, no VCOM/gate/LUT) — everything else (driver control, display
+    // update ctrl1, temp control, data entry mode, RAM window/cursor) is unchanged, pinned
+    // directly against Adafruit_EPD's `ti_266mfgn_gray4_init_code`.
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x12),                // SW_RESET
+            SpiRecord::Command(0x01),                // DRIVER_CONTROL
+            SpiRecord::Data(vec![0x27, 0x01, 0x00]), // 296-1 = 295 = 0x0127
+            SpiRecord::Command(0x3C),                // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x04]),
+            SpiRecord::Command(0x03), // GATE_VOLTAGE
+            SpiRecord::Data(vec![0x17]),
+            SpiRecord::Command(0x04), // SOURCE_VOLTAGE
+            SpiRecord::Data(vec![0x41, 0xAE, 0x32]),
+            SpiRecord::Command(0x3F), // LUT_END_OPTION
+            SpiRecord::Data(vec![0x22]),
+            SpiRecord::Command(0x2C), // WRITE_VCOM_REGISTER
+            SpiRecord::Data(vec![0x28]),
+            SpiRecord::Command(0x32), // WRITE_LUT_REGISTER
+            SpiRecord::Data(gray4.lut.to_vec()),
+            SpiRecord::Command(0x21), // DISPLAY_UPDATE_CTRL1
+            SpiRecord::Data(vec![0x00, 0x80]),
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44),                      // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x12]),             // (152-1)/8 = 18 = 0x12
+            SpiRecord::Command(0x45),                      // SET_RAMYPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0x27, 0x01]), // 295 = 0x0127
+            SpiRecord::Command(0x4E),                      // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1680_gdey0266t90_gray4_init_sequence,
+    ssd1680_gdey0266t90_gray4_init_sequence_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn ssd1680_gdey0266z90_clear_frame_plane_polarity_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
@@ -381,6 +446,38 @@ async fn ssd1680_trigger_refresh_fast_full_and_base_map_body() {
 epd_test!(
     test_ssd1680_trigger_refresh_fast_full_and_base_map,
     ssd1680_trigger_refresh_fast_full_and_base_map_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_trigger_refresh_gray4_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = DummyDelay;
+
+    // Gray4: 0xC7 fired bare, no temperature preamble, no SSD1680 power envelope — contrast
+    // directly against `FastFull`'s 0xE0/.../0x83-wrapped, preamble-preceded sequence above.
+    let mut controller = Ssd1680Controller::new(GDEY0266T90::WIDTH, GDEY0266T90::HEIGHT)
+        .with_refresh_mode(Ssd168xRefreshMode::Gray4);
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xC7]),
+            SpiRecord::Command(0x20),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1680_trigger_refresh_gray4,
+    ssd1680_trigger_refresh_gray4_body
 );
 
 #[maybe_async_cfg::maybe(

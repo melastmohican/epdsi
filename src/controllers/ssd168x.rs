@@ -2,21 +2,21 @@
 
 #[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-#[cfg(not(feature = "blocking"))]
-use embedded_hal_async::delay::DelayNs;
 #[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
 #[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(not(feature = "blocking"))]
 use embedded_hal_async::spi::SpiDevice;
 
-use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(feature = "blocking")]
 use embedded_hal::digital::InputPin as Wait;
+use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
-use crate::traits::{ColorChannel, EpdController, EpdPanel};
+use crate::traits::{ColorChannel, EpdController, EpdPanel, Gray4Registers};
 
 /// SSD168x Command Definitions
 pub mod cmd {
@@ -24,6 +24,10 @@ pub mod cmd {
     pub const DRIVER_CONTROL: u8 = 0x01;
     /// Gate driving voltage control
     pub const GATE_VOLTAGE: u8 = 0x03;
+    /// Source driving voltage control. Only used by Gray4 mode today — the datasheet documents it
+    /// as part of the same unified waveform-setting block as [`WRITE_LUT_REGISTER`], alongside
+    /// [`GATE_VOLTAGE`] and [`WRITE_VCOM_REGISTER`].
+    pub const SOURCE_VOLTAGE: u8 = 0x04;
     /// Deep sleep mode entry
     pub const DEEP_SLEEP_MODE: u8 = 0x10;
     /// Data entry mode setting
@@ -50,6 +54,11 @@ pub mod cmd {
     pub const WRITE_LUT_REGISTER: u8 = 0x32;
     /// Border waveform control
     pub const BORDER_WAVEFORM_CONTROL: u8 = 0x3C;
+    /// "Option for LUT end" — SSD1680 datasheet's name (§6.7 "Waveform Setting"), WS byte 153 of
+    /// the same unified 159-byte waveform-setting block as [`WRITE_LUT_REGISTER`],
+    /// [`GATE_VOLTAGE`], [`SOURCE_VOLTAGE`] and [`WRITE_VCOM_REGISTER`]. Only used by Gray4 mode
+    /// today. Adafruit's own source leaves this commented `// ???`; the datasheet does name it.
+    pub const LUT_END_OPTION: u8 = 0x3F;
     /// Set RAM X address start/end position
     pub const SET_RAMXPOS: u8 = 0x44;
     /// Set RAM Y address start/end position
@@ -117,6 +126,17 @@ pub enum Ssd168xRefreshMode {
     /// `DEPG0266BN`) uses the same byte as its ordinary full update, after an explicit power-on.
     /// The base-map role is how Good Display's demo uses it, not something the SSD168x enforces.
     BaseMap,
+    /// 4-level grayscale display update (`UPDATE_DISPLAY_CTRL2 = 0xC7`), for panels configured
+    /// with [`Ssd168xController::with_gray4`]/[`EpdPanel::GRAY4`].
+    ///
+    /// `0xC7` is a datasheet-documented Display Update Sequence Option (register `0x22`):
+    /// "Enable clock signal, Enable Analog, Display with DISPLAY Mode 1, Disable Analog, Disable
+    /// OSC" — the same sequence as [`Ssd168xRefreshMode::Full`]'s `0xF7`, minus the temperature
+    /// reload step, since Gray4 relies on the custom LUT already loaded during init rather than
+    /// the OTP LUT. Ported from Adafruit_EPD's `Adafruit_SSD1680::update()`, which fires this
+    /// trigger bare — no temperature preamble, no extra power envelope — because the byte is
+    /// itself a complete operating sequence.
+    Gray4,
 }
 
 /// Generic SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
@@ -129,6 +149,7 @@ pub struct Ssd168xController {
     vcom: Option<u8>,
     gate_voltage: Option<u8>,
     custom_lut: Option<&'static [u8]>,
+    gray4: Option<Gray4Registers>,
 }
 
 /// Dedicated controller for SSD1680 IC (176×296 RAM, power stage 0xE0/0x83).
@@ -232,6 +253,20 @@ impl Ssd1680Controller {
         self.inner.custom_lut()
     }
 
+    /// Sets the 4-level grayscale register bundle written during init (builder method).
+    ///
+    /// `None` — the default — leaves the panel on plain monochrome. Not read automatically by
+    /// [`for_panel`](Self::for_panel); pass `P::GRAY4` explicitly, since Gray4 is a wholly
+    /// different, mutually exclusive waveform configuration rather than an additive tweak.
+    pub fn with_gray4(mut self, gray4: Option<Gray4Registers>) -> Self {
+        self.inner = self.inner.with_gray4(gray4);
+        self
+    }
+
+    /// Returns the configured Gray4 register bundle, if any.
+    pub fn gray4(&self) -> Option<Gray4Registers> {
+        self.inner.gray4()
+    }
 
     /// Access underlying generic controller.
     pub fn into_inner(self) -> Ssd168xController {
@@ -323,6 +358,21 @@ impl Ssd1681Controller {
         self.inner.custom_lut()
     }
 
+    /// Sets the 4-level grayscale register bundle written during init (builder method).
+    ///
+    /// `None` — the default — leaves the panel on plain monochrome. Not read automatically by
+    /// [`for_panel`](Self::for_panel); pass `P::GRAY4` explicitly, since Gray4 is a wholly
+    /// different, mutually exclusive waveform configuration rather than an additive tweak.
+    pub fn with_gray4(mut self, gray4: Option<Gray4Registers>) -> Self {
+        self.inner = self.inner.with_gray4(gray4);
+        self
+    }
+
+    /// Returns the configured Gray4 register bundle, if any.
+    pub fn gray4(&self) -> Option<Gray4Registers> {
+        self.inner.gray4()
+    }
+
     /// Access underlying generic controller.
     pub fn into_inner(self) -> Ssd168xController {
         self.inner
@@ -340,6 +390,7 @@ impl Ssd168xController {
             vcom: None,
             gate_voltage: None,
             custom_lut: None,
+            gray4: None,
         }
     }
 
@@ -353,6 +404,7 @@ impl Ssd168xController {
             vcom: None,
             gate_voltage: None,
             custom_lut: None,
+            gray4: None,
         }
     }
 
@@ -366,6 +418,7 @@ impl Ssd168xController {
             vcom: None,
             gate_voltage: None,
             custom_lut: None,
+            gray4: None,
         }
     }
 
@@ -458,6 +511,21 @@ impl Ssd168xController {
     /// Returns the configured custom LUT, if any.
     pub fn custom_lut(&self) -> Option<&'static [u8]> {
         self.custom_lut
+    }
+
+    /// Sets the 4-level grayscale register bundle written during init (builder method).
+    ///
+    /// `None` — the default — leaves the panel on plain monochrome. Not read automatically by
+    /// [`for_panel`](Self::for_panel); pass `P::GRAY4` explicitly, since Gray4 is a wholly
+    /// different, mutually exclusive waveform configuration rather than an additive tweak.
+    pub fn with_gray4(mut self, gray4: Option<Gray4Registers>) -> Self {
+        self.gray4 = gray4;
+        self
+    }
+
+    /// Returns the configured Gray4 register bundle, if any.
+    pub fn gray4(&self) -> Option<Gray4Registers> {
+        self.gray4
     }
 }
 
@@ -652,20 +720,38 @@ where
         bus.send_command_with_data(cmd::DRIVER_CONTROL, &[h_low, h_high, 0x00])
             .await?;
 
-        // Border Waveform Control
-        bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x05])
-            .await?;
+        if let Some(gray4) = &self.gray4 {
+            // Gray4 is a wholly different, mutually exclusive analog/waveform configuration —
+            // ported verbatim (register order included) from Adafruit_EPD's
+            // `ti_266mfgn_gray4_init_code`, not layered onto the baseline block below.
+            bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[gray4.border_waveform])
+                .await?;
+            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gray4.gate_voltage])
+                .await?;
+            bus.send_command_with_data(cmd::SOURCE_VOLTAGE, &gray4.source_voltage)
+                .await?;
+            bus.send_command_with_data(cmd::LUT_END_OPTION, &[gray4.lut_end_option])
+                .await?;
+            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[gray4.vcom])
+                .await?;
+            bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, gray4.lut)
+                .await?;
+        } else {
+            // Border Waveform Control
+            bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x05])
+                .await?;
 
-        // Panel-declared analog overrides, in the order GxEPD2's SSD168x drivers write them
-        // (`GxEPD2_213_B72::_InitDisplay`): VCOM then gate driving voltage, straight after the
-        // border waveform. Both are absent by default, leaving the panel on its OTP values.
-        if let Some(vcom) = self.vcom {
-            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])
-                .await?;
-        }
-        if let Some(gate_voltage) = self.gate_voltage {
-            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])
-                .await?;
+            // Panel-declared analog overrides, in the order GxEPD2's SSD168x drivers write them
+            // (`GxEPD2_213_B72::_InitDisplay`): VCOM then gate driving voltage, straight after the
+            // border waveform. Both are absent by default, leaving the panel on its OTP values.
+            if let Some(vcom) = self.vcom {
+                bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])
+                    .await?;
+            }
+            if let Some(gate_voltage) = self.gate_voltage {
+                bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])
+                    .await?;
+            }
         }
 
         // SSD1680 specific: Display Update Control 1 (RAM content option / source output mode)
@@ -689,7 +775,9 @@ where
 
         // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`, which
         // writes 0x32 after `_InitDisplay()` has finished the register and RAM-area block.
-        if let Some(lut) = self.custom_lut {
+        // Skipped when Gray4 is active: its LUT was already uploaded above, as part of its own
+        // mutually exclusive register block, not this one.
+        if let Some(lut) = self.custom_lut.filter(|_| self.gray4.is_none()) {
             bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)
                 .await?;
         }
@@ -779,6 +867,19 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
+        // Gray4: 0xC7 is itself a complete, datasheet-documented operating sequence ("Enable
+        // clock signal, Enable Analog, Display with DISPLAY Mode 1, Disable Analog, Disable
+        // OSC" — register 0x22, Display Update Sequence Option), so it is fired bare — no
+        // temperature preamble, no per-variant power envelope — matching Adafruit_EPD's
+        // `Adafruit_SSD1680::update()` exactly.
+        if self.refresh_mode == Ssd168xRefreshMode::Gray4 {
+            bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xC7])
+                .await?;
+            bus.send_command(cmd::MASTER_ACTIVATE).await?;
+            delay.delay_ms(1).await;
+            return bus.wait_busy_with_delay(delay, true).await;
+        }
+
         // Fast waveform: load the sensor temperature, override the register with 90 °C, then
         // reload the OTP LUT at that temperature. Good Display issue this from a dedicated
         // `EPD_HW_Init_Fast()` that skips driver output control, data entry mode and the RAM
@@ -807,6 +908,8 @@ where
             Ssd168xRefreshMode::Partial => 0xFC,
             Ssd168xRefreshMode::FastFull => 0xC7,
             Ssd168xRefreshMode::BaseMap => 0xF4,
+            // Unreachable: handled by the early return above.
+            Ssd168xRefreshMode::Gray4 => 0xC7,
         };
 
         // Every mode goes through the same per-variant power envelope. The vendor references
