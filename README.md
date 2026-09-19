@@ -38,6 +38,11 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 
 > **Hardware Note for EXT3-1 Extension Boards:** Ensure the **J3 jumper** is **OPEN** ($10\,\mu\text{H}$ inductor path) for panels $\le 3.7"$ (e.g. 2.66" and 2.9" panels). If J3 is closed ($47\,\mu\text{H}$ path), the DC-DC booster chokes during current bursts, causing voltage sags and BUSY pin hangs.
 
+> **Have a stock Waveshare module?** `epdsi`'s panels are mostly Good Display/Pervasive/WeAct/
+> Adafruit/Seeed glass — several share a size class with a Waveshare part but none is an exact SKU
+> match. If your module is a Waveshare-branded board, check
+> [`epd-waveshare`](https://crates.io/crates/epd-waveshare)'s panel list first.
+
 ### Tri-Color panels and partial refresh
 
 Colour panels have **no fast/differential waveform**. The red (or yellow) pigment is a
