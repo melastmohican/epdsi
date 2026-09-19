@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-18
+
+### Fixed
+
+- `EpdDriver::clear_frame` computed byte counts by matching only `ColorMode::QuadColor`, so every
+  other mode — including `ColorMode::SevenColor` (4bpp, 2 pixels/byte) — fell through to the
+  1-bit-per-pixel formula and sent roughly 1/4 the bytes the plane needs. On `GDEP073E01`
+  (800×480, the crate's only `SevenColor` panel), a full-panel clear only zeroed the top ~120 of
+  480 rows — the bottom 75% kept whatever was in RAM before, showing old image data at the next
+  refresh. Added a `SevenColor` arm mirroring `required_bytes()`'s existing `ColorChannel::Color7`
+  handling. Hardware-verified on `rust-reterminal-e1002-examples` (`GDEP073E01`): a full-panel
+  image now clears with no remnants anywhere on the panel.
+- `Ed2208Controller`'s narrowed RAM window (`PARTIAL_WINDOW`/`0x83`, set via
+  `EpdDriver::set_window`) never widened back out — a subsequent full-panel `write_frame`/
+  `refresh()` stayed silently scoped to the last narrowed region instead of updating the whole
+  panel. `trigger_refresh` now reasserts the full-panel window before every refresh, matching
+  `GxEPD2_730c_GDEP073E01.cpp::refresh(bool)`. An initial attempt also reasserted the window from
+  `init_sequence`, which `_InitDisplay()` never does in the reference driver; sending it there
+  corrupted the panel's RAM-write state on real hardware (visible as full-panel static), caught
+  and reverted before release. Hardware-verified on `rust-reterminal-e1002-examples`
+  (`GDEP073E01`).
+
+### Changed
+
+- README: point owners of stock Waveshare modules at
+  [`epd-waveshare`](https://crates.io/crates/epd-waveshare)'s panel list — `epdsi`'s panels are
+  mostly Good Display/Pervasive/WeAct/Adafruit/Seeed glass with only size-class overlap against
+  Waveshare's stock SKUs, no exact part-number match.
+
 ## [0.4.0] - 2026-09-13
 
 ### Added
@@ -514,7 +543,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/melastmohican/epdsi/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/melastmohican/epdsi/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/melastmohican/epdsi/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/melastmohican/epdsi/compare/v0.2.2...v0.3.0
