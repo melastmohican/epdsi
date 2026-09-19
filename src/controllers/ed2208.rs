@@ -216,6 +216,13 @@ where
         bus.send_command(cmd::POWER_ON).await?;
         bus.wait_busy(false).await?;
 
+        // Reassert the full-panel RAM window so a prior narrowed `set_window` call never
+        // leaks into a later full-panel write/refresh — GxEPD2 reasserts 0x83 before every
+        // RAM write and refresh, full-screen or not; epdsi instead reasserts here and again
+        // in `trigger_refresh`, which covers the same cases without resending it per write.
+        self.set_partial_ram_area(bus, 0, 0, self.width, self.height)
+            .await?;
+
         Ok(())
     }
 
@@ -275,6 +282,11 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
+        // Reassert the full-panel window before every refresh, matching GxEPD2's
+        // per-operation reassertion — a caller may have narrowed the window via
+        // `set_window` for a prior partial update and never widened it back out.
+        self.set_partial_ram_area(bus, 0, 0, self.width, self.height)
+            .await?;
         bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])
             .await?;
         delay.delay_ms(1).await;

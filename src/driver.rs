@@ -184,6 +184,9 @@ where
         // visible `WIDTH` — see `EpdPanel::RAM_WIDTH`.
         let total_bytes = match PANEL::COLOR_MODE {
             ColorMode::QuadColor => quad_color_row_bytes(PANEL::RAM_WIDTH) * PANEL::HEIGHT as usize,
+            ColorMode::SevenColor => {
+                (PANEL::WIDTH as usize * PANEL::HEIGHT as usize).div_ceil(2)
+            }
             _ => PANEL::WIDTH.div_ceil(8) as usize * PANEL::HEIGHT as usize,
         };
         self.controller
