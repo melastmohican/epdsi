@@ -65,7 +65,7 @@ async fn jd79661_init_sequence_body() {
             SpiRecord::Command(0x50), // CDI
             SpiRecord::Data(vec![0x37]),
             SpiRecord::Command(0x60), // TCON
-            SpiRecord::Data(vec![0x02, 0x02, 0x02]),
+            SpiRecord::Data(vec![0x02, 0x02]),
             SpiRecord::Command(0x61), // RESOLUTION — 122px RAM-padded to 128
             SpiRecord::Data(vec![0x00, 0x80, 0x00, 0xFA]),
             SpiRecord::Command(0xE7), // undocumented in either public datasheet

@@ -244,8 +244,7 @@ where
                 bus.send_command_with_data(cmd::CDI, &[0x37]).await?;
 
                 // TCON
-                bus.send_command_with_data(cmd::TCON, &[0x02, 0x02, 0x02])
-                    .await?;
+                bus.send_command_with_data(cmd::TCON, &[0x02, 0x02]).await?;
 
                 // Resolution setting (Align RAM width to 8-pixel byte boundary, e.g. 128 x 250)
                 let ram_width = self.width.div_ceil(8) * 8;
