@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-19
+
+### Fixed
+
+- `Jd79661Controller`'s init sequence sent `TCON` (`0x60`) with 3 data bytes (`[0x02, 0x02, 0x02]`);
+  both `Adafruit_JD79661.cpp:20` (`0x60, 2, 0x02, 0x02`) and `GxEPD2_213c_GDEY0213F51.cpp:946-948`
+  agree TCON takes exactly 2. Trimmed to `[0x02, 0x02]`. Low-severity in practice — the panel this
+  drives (`ZJY122250_0213AJH_E5`) is hardware-verified working correctly across all four of the
+  crate's blocking and async hardware hosts with the extra byte present, evidently latched
+  harmlessly — but it's a real byte-level parity gap against two independent vendor references,
+  fixed for the crate's own stated bar.
+
+### Changed
+
+- Swapped the `e-paper` keyword for `epaper` in `Cargo.toml`. crates.io's `e-paper` keyword bucket
+  only reaches 2 crates; `epaper` (no hyphen) is the one nearly every peer crate — `epd-waveshare`,
+  `ssd1680`, `ssd1681`, `il0373`, `epd-datafuri`, `gdep073e01`, `ssd1677-driver`, and others — is
+  actually tagged with, and where real searches land.
+
 ## [0.4.1] - 2026-09-18
 
 ### Fixed
@@ -543,7 +562,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/melastmohican/epdsi/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/melastmohican/epdsi/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/melastmohican/epdsi/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/melastmohican/epdsi/compare/v0.3.0...v0.3.1
