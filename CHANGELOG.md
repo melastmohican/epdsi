@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EpdDriver::display_frame(channel, data, delay)`, bundling `write_frame` + `refresh` into one
+  call for the common single-channel "just show this frame" case. Purely additive — existing
+  `write_frame`/`refresh` primitives are unchanged and remain the right choice for multi-channel
+  (Tri-Color/Quad-Color) writes or paged/partial updates.
+
 ## [0.4.2] - 2026-09-19
 
 ### Fixed

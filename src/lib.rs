@@ -23,7 +23,9 @@
 //!   plus DC, RST and BUSY pins. See [`bus`]. Panels needing OTP register reads over a
 //!   bit-banged 3-wire link use [`Spi3Bus`] instead (see [`bus3`]).
 //! - [`EpdDriver`] — the orchestrator, built with [`EpdBuilder`], exposing the public
-//!   API: `init`, `set_window`, `write_frame`, `clear_frame`, `refresh`, `sleep`.
+//!   API: `init`, `set_window`, `write_frame`, `clear_frame`, `refresh`, `sleep`, plus
+//!   [`display_frame`](EpdDriver::display_frame) bundling a single `write_frame` + `refresh`
+//!   for the common single-channel case.
 //!
 //! Colour is unified across all panels by [`ColorMode`] and [`ColorChannel`], so
 //! multi-buffer COGs (Pervasive's separate black/white and red RAM, for instance) are

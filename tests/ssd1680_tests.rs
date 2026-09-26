@@ -499,6 +499,99 @@ async fn ssd1680_sleep_body() {
 }
 epd_test!(test_ssd1680_sleep, ssd1680_sleep_body);
 
+// --- `EpdDriver::display_frame` parity with write_frame + refresh (plan item 3b) -------------
+//
+// One monochrome panel and one Tri-Color panel, both on the shared `Ssd1680Controller`, proving
+// `display_frame` emits exactly the same bytes as the two-call sequence it replaces.
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_display_frame_matches_write_then_refresh_mono_body() {
+    let frame = [0xAAu8; 122usize.div_ceil(8) * 250];
+    let mut delay = DummyDelay;
+
+    let manual_backend = RecordingSpiBus::new();
+    let manual_bus =
+        SpiBusWrapper::new(&manual_backend, TestDc(&manual_backend), DummyPin, DummyPin);
+    let manual_controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
+    let mut manual_driver = EpdBuilder::<_, GDEM0213B74>::new(manual_controller).build(manual_bus);
+    manual_driver
+        .write_frame(ColorChannel::BlackWhite, &frame)
+        .await
+        .unwrap();
+    manual_driver.refresh(&mut delay).await.unwrap();
+
+    let combined_backend = RecordingSpiBus::new();
+    let combined_bus = SpiBusWrapper::new(
+        &combined_backend,
+        TestDc(&combined_backend),
+        DummyPin,
+        DummyPin,
+    );
+    let combined_controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
+    let mut combined_driver =
+        EpdBuilder::<_, GDEM0213B74>::new(combined_controller).build(combined_bus);
+    combined_driver
+        .display_frame(ColorChannel::BlackWhite, &frame, &mut delay)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        combined_backend.records.borrow().clone(),
+        manual_backend.records.borrow().clone()
+    );
+}
+epd_test!(
+    test_ssd1680_display_frame_matches_write_then_refresh_mono,
+    ssd1680_display_frame_matches_write_then_refresh_mono_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_display_frame_matches_write_then_refresh_tri_color_body() {
+    let frame = [0x55u8; 152 / 8 * 296];
+    let mut delay = DummyDelay;
+
+    let manual_backend = RecordingSpiBus::new();
+    let manual_bus =
+        SpiBusWrapper::new(&manual_backend, TestDc(&manual_backend), DummyPin, DummyPin);
+    let manual_controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut manual_driver = EpdBuilder::<_, GDEY0266Z90>::new(manual_controller).build(manual_bus);
+    manual_driver
+        .write_frame(ColorChannel::RedYellow, &frame)
+        .await
+        .unwrap();
+    manual_driver.refresh(&mut delay).await.unwrap();
+
+    let combined_backend = RecordingSpiBus::new();
+    let combined_bus = SpiBusWrapper::new(
+        &combined_backend,
+        TestDc(&combined_backend),
+        DummyPin,
+        DummyPin,
+    );
+    let combined_controller = Ssd1680Controller::new(GDEY0266Z90::WIDTH, GDEY0266Z90::HEIGHT);
+    let mut combined_driver =
+        EpdBuilder::<_, GDEY0266Z90>::new(combined_controller).build(combined_bus);
+    combined_driver
+        .display_frame(ColorChannel::RedYellow, &frame, &mut delay)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        combined_backend.records.borrow().clone(),
+        manual_backend.records.borrow().clone()
+    );
+}
+epd_test!(
+    test_ssd1680_display_frame_matches_write_then_refresh_tri_color,
+    ssd1680_display_frame_matches_write_then_refresh_tri_color_body
+);
+
 // --- Characterisation of the init path (plan item 1b) ----------------------------------------
 //
 // `test_ssd1680_init_sequence` and `test_ssd1680_gdey0266z90_init_sequence` already pin the

@@ -172,6 +172,52 @@ where
             .await
     }
 
+    /// Writes `data` into `channel` and immediately triggers a refresh — the common case of
+    /// "just show this frame," bundling [`write_frame`](Self::write_frame) and
+    /// [`refresh`](Self::refresh) into one call.
+    ///
+    /// For a Tri-Color or Quad-Color panel needing more than one channel written before the
+    /// refresh (e.g. `BlackWhite` then `RedYellow`), call [`write_frame`](Self::write_frame)
+    /// directly for each channel and [`refresh`](Self::refresh) once at the end instead — this
+    /// method always refreshes after the single write it performs.
+    ///
+    /// ```rust,no_run
+    /// # use embedded_hal_mock::eh1::{
+    /// #     spi::Mock as SpiMock, digital::Mock as PinMock, delay::NoopDelay,
+    /// # };
+    /// # #[cfg(all(feature = "graphics", feature = "blocking"))] {
+    /// # use epdsi::prelude::*;
+    /// # let spi_device = SpiMock::<u8>::new(&[]);
+    /// # let (dc_pin, rst_pin, busy_pin) =
+    /// #     (PinMock::new(&[]), PinMock::new(&[]), PinMock::new(&[]));
+    /// # let mut delay = NoopDelay;
+    /// # let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+    /// # let controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
+    /// # let mut epd = EpdBuilder::<_, GDEM0213B74>::new(controller).build(epd_bus);
+    /// # epd.init(&mut delay).unwrap();
+    /// # let frame_buf = [0xFFu8; 122usize.div_ceil(8) * 250];
+    /// // Instead of:
+    /// //   epd.write_frame(ColorChannel::BlackWhite, &frame_buf).unwrap();
+    /// //   epd.refresh(&mut delay).unwrap();
+    /// epd.display_frame(ColorChannel::BlackWhite, &frame_buf, &mut delay).unwrap();
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Same as [`write_frame`](Self::write_frame) and [`refresh`](Self::refresh): a
+    /// [`ValidationError::BufferTooSmall`] if `data` is too short for the active window, or
+    /// whatever `CONTROLLER::Error` the refresh sequence's bus I/O returns.
+    pub async fn display_frame<DELAY: DelayNs>(
+        &mut self,
+        channel: ColorChannel,
+        data: &[u8],
+        delay: &mut DELAY,
+    ) -> Result<(), CONTROLLER::Error> {
+        self.write_frame(channel, data).await?;
+        self.refresh(delay).await
+    }
+
     /// Clears display RAM for a targeted color channel using a fill byte pattern.
     pub async fn clear_frame(
         &mut self,
