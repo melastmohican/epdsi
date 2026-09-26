@@ -51,6 +51,10 @@ The exception is a panel that shares an IC but not its register profile, which a
 - **GxEPD2 parity auditing**: The `gxepd2-parity-audit` skill (`.agents/skills/gxepd2-parity-audit/SKILL.md`) documents the checkpoints for auditing non-Pervasive controllers (`SSD1680`, `SSD1681`, `SSD1677`, `UC8253`, `ED2208`, `JD79661`) against `ZinggJM/GxEPD2` C++ reference drivers. Consult it before modifying controller command sequences, RAM window bounds, custom waveform LUT tables, or update modes (`Full`, `Partial`, `FastFull`, `FastPartial`).
 - **Peer crate parity auditing**: The `peer-crate-parity-audit` skill (`.agents/skills/peer-crate-parity-audit/SKILL.md`) documents how to audit `epdsi` against competing published crates.io EPD drivers (`ssd1680`, `epd-datafuri`, `weact-studio-epd`, `epd-waveshare`) and produce a ranked parity report. Unlike the two skills above, its reference is **not** authoritative — peer crates ship real defects, so a byte-level divergence there is a finding about the peer until the vendor C++ reference corroborates it. Use it for feature/ergonomics/positioning questions, never to "fix parity" toward a peer.
 
+### Release process skill
+
+- **Cutting a release**: The `epdsi-release` skill (`.agents/skills/epdsi-release/SKILL.md`) documents the tag-driven release pipeline (`.github/workflows/release.yml`) and, more importantly, the pre-release verification checklist to run before pushing any `vX.Y.Z` tag — plain `cargo test`/`cargo clippy` against the committed `Cargo.lock` is not sufficient, since CI's MSRV job deletes the lockfile and re-resolves fresh. Consult it before bumping `Cargo.toml`'s version, not only after a release has already failed.
+
 ### Hardware note
 
 EXT3-1 extension boards: the **J3 jumper** must be **OPEN** (10 µH path) for panels ≤ 3.7" (e.g. 2.66", 2.9"). Closed (47 µH path) causes DC-DC booster power sag and BUSY-pin hangs on small panels — relevant when debugging reported hardware behavior, not something code can fix.
