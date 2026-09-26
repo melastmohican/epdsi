@@ -27,8 +27,10 @@ embedded-hal-async = "1.0.0"
 maybe-async-cfg = "0.2"
 # Not used directly — pins the transitive `defmt -> defmt-parser -> thiserror` dependency below
 # 2.0.21, which raised thiserror-impl's own MSRV to 1.77 and breaks this crate's declared 1.75
-# floor on a fresh (lockfile-less) resolve. Remove once defmt moves past this thiserror version.
-thiserror = "=2.0.19"
+# floor on a fresh (lockfile-less) resolve. `optional`/no-default-features so it neither pulls in
+# `std` (breaking `no_std` targets) nor builds at all unless `defmt` is enabled. Remove once defmt
+# moves past this thiserror version.
+thiserror = { version = "=2.0.19", optional = true, default-features = false }
 
 [dependencies.defmt]
 version = "1.0"
@@ -47,7 +49,7 @@ default = ["blocking", "graphics"]
 # `epdsi = { version = "0.2", default-features = false, features = ["graphics"] }`.
 blocking = []
 graphics = ["dep:embedded-graphics-core"]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "dep:thiserror"]
 
 [package.metadata.docs.rs]
 all-features = true
