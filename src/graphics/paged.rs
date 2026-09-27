@@ -5,6 +5,18 @@ use embedded_hal::delay::DelayNs;
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::delay::DelayNs;
 
+#[cfg(feature = "blocking")]
+use embedded_hal::digital::InputPin as Ssd1677Wait;
+use embedded_hal::digital::{InputPin, OutputPin};
+#[cfg(feature = "blocking")]
+use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::digital::Wait as Ssd1677Wait;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::spi::SpiDevice;
+
+use crate::bus::{EpdBusError, SpiBusWrapper};
+use crate::controllers::{Ssd1677Controller, Ssd1677RefreshMode};
 use crate::driver::EpdDriver;
 use crate::graphics::buffer::{
     Gray4Polarity, GrayBufferPair, PageBuffer, PageBufferPair, PlanePolarity,
@@ -227,5 +239,145 @@ where
     }
 
     // Trigger physical display update
+    driver.refresh(delay).await
+}
+
+/// Two-pass Gray4 counterpart of [`render_paged_gray4`], for
+/// [`Ssd1677Controller`]/[`GDEQ0426T82`](crate::panels::GDEQ0426T82) — the only Gray4-capable
+/// controller in this crate whose refresh sequence needs a baseline monochrome pass before the
+/// custom LUT can render intermediate gray levels correctly (ported from
+/// `Adafruit_SSD1677::update()`'s grayscale branch). Unlike `render_paged_gray4`, which is generic
+/// over any [`EpdController`], this function is concrete to `Ssd1677Controller` because the
+/// two-pass sequencing needs [`Ssd1677Controller::reload_gray4_lut`] and
+/// [`Ssd1677RefreshMode`] switching mid-flow — neither expressible through the generic trait.
+///
+/// Configure the controller with `.with_gray4(PANEL::GRAY4)` before calling this; the refresh
+/// mode is managed internally (set to [`Ssd1677RefreshMode::Gray4Preclear`] then
+/// [`Ssd1677RefreshMode::Gray4`]) and left on `Gray4` afterward.
+///
+/// # Sequencing
+/// 1. Sweep every page, drawing `draw_fn` and writing the resulting Black/White plane to *both*
+///    the `BlackWhite` and `RedYellow` channels (same bytes) — this "preclears" the panel to the
+///    final image's black/white split before any gray waveform runs.
+/// 2. Trigger a [`Ssd1677RefreshMode::Gray4Preclear`] refresh — one whole-panel OTP-LUT refresh
+///    with the Red/Yellow plane bypassed.
+/// 3. Reload the Gray4 LUT and voltage registers via
+///    [`Ssd1677Controller::reload_gray4_lut`] — the preclear refresh's OTP LUT load overwrites the
+///    custom LUT uploaded during `init`.
+/// 4. Sweep every page a **second time**, re-invoking `draw_fn`, writing the real Black/White
+///    (LSB) and Red/Yellow (MSB) planes.
+/// 5. Trigger a [`Ssd1677RefreshMode::Gray4`] refresh — the final pass with the custom LUT.
+///
+/// # `draw_fn` is called twice per page
+///
+/// Page buffers are not retained across the frame — the whole point of paging is bounded memory
+/// — so the second sweep reconstructs each page's pixel data by calling `draw_fn` again rather
+/// than caching it. **`draw_fn` must be deterministic**: drawing the same page twice must produce
+/// the same bytes both times, or the final image will not match what the preclear pass set as the
+/// baseline. A closure reading from a stable source (a framebuffer, an image, `embedded-graphics`
+/// primitives) satisfies this; one with side effects that change what gets drawn between calls
+/// does not.
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
+pub async fn render_paged_gray4_preclear<SPI, DC, RST, BUSY, PANEL, DELAY, F>(
+    driver: &mut EpdDriver<SpiBusWrapper<SPI, DC, RST, BUSY>, Ssd1677Controller, PANEL>,
+    delay: &mut DELAY,
+    page_buffers: (&mut [u8], &mut [u8]),
+    polarity: Gray4Polarity,
+    page_height: u32,
+    mut draw_fn: F,
+) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+where
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin + Ssd1677Wait,
+    PANEL: EpdPanel,
+    DELAY: DelayNs,
+    F: FnMut(&mut GrayBufferPair),
+{
+    let (plane_a_page_buffer, plane_b_page_buffer) = page_buffers;
+    let width = PANEL::WIDTH;
+    let height = PANEL::HEIGHT;
+    let total_pages = height.div_ceil(page_height);
+
+    // Pass 1: preclear. Same Black/White content goes to both channels.
+    for page_idx in 0..total_pages {
+        let y_start = page_idx * page_height;
+        let y_end = (y_start + page_height).min(height) - 1;
+        let current_page_height = y_end - y_start + 1;
+        let required_bytes = width.div_ceil(8) as usize * current_page_height as usize;
+
+        plane_a_page_buffer[..required_bytes].fill(polarity.plane_a_background_byte());
+        plane_b_page_buffer[..required_bytes].fill(polarity.plane_b_background_byte());
+        let mut page_buf = GrayBufferPair::new(
+            &mut plane_a_page_buffer[..required_bytes],
+            &mut plane_b_page_buffer[..required_bytes],
+            width,
+            current_page_height,
+            y_start,
+            polarity,
+        );
+        draw_fn(&mut page_buf);
+
+        driver.set_window(0, y_start, width - 1, y_end).await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::BlackWhite, page_buf.plane_a().as_slice())
+            .await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::RedYellow, page_buf.plane_a().as_slice())
+            .await?;
+    }
+
+    driver
+        .controller_mut()
+        .set_refresh_mode(Ssd1677RefreshMode::Gray4Preclear);
+    driver.refresh(delay).await?;
+
+    {
+        let (bus, controller) = driver.split_mut();
+        controller.reload_gray4_lut(bus).await?;
+    }
+
+    driver
+        .controller_mut()
+        .set_refresh_mode(Ssd1677RefreshMode::Gray4);
+
+    // Pass 2: the real image.
+    for page_idx in 0..total_pages {
+        let y_start = page_idx * page_height;
+        let y_end = (y_start + page_height).min(height) - 1;
+        let current_page_height = y_end - y_start + 1;
+        let required_bytes = width.div_ceil(8) as usize * current_page_height as usize;
+
+        plane_a_page_buffer[..required_bytes].fill(polarity.plane_a_background_byte());
+        plane_b_page_buffer[..required_bytes].fill(polarity.plane_b_background_byte());
+        let mut page_buf = GrayBufferPair::new(
+            &mut plane_a_page_buffer[..required_bytes],
+            &mut plane_b_page_buffer[..required_bytes],
+            width,
+            current_page_height,
+            y_start,
+            polarity,
+        );
+        draw_fn(&mut page_buf);
+
+        driver.set_window(0, y_start, width - 1, y_end).await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::BlackWhite, page_buf.plane_a().as_slice())
+            .await?;
+        driver.set_cursor(0, y_start).await?;
+        driver
+            .write_frame(ColorChannel::RedYellow, page_buf.plane_b().as_slice())
+            .await?;
+    }
+
     driver.refresh(delay).await
 }

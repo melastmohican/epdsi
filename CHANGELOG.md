@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-26
+
+### Added
+
+- 4-level grayscale (Gray4) support for `GDEQ0426T82` (`Ssd1677Controller`): `GDEQ0426T82::GRAY4`,
+  `Ssd1677Controller::with_gray4`/`reload_gray4_lut`, `Ssd1677RefreshMode::Gray4Preclear`/`Gray4`,
+  `Gray4Polarity::ADAFRUIT_SSD1677`, and `render_paged_gray4_preclear`. Ported from Adafruit_EPD's
+  `ThinkInk_426_Grayscale4_GDEQ` — not Seeed/Good Display material. Unlike `GDEY0266T90`'s
+  single-pass SSD1680 Gray4 mode, `Adafruit_SSD1677::update()`'s grayscale branch is two-pass (a
+  baseline mono refresh, then an LUT/voltage-register reload, then the real refresh), so this
+  needed its own refresh-mode pair and a dedicated two-pass paged-rendering helper rather than
+  reusing the existing single-pass `render_paged_gray4`. **Confirmed on physical hardware** on all
+  four boards this crate targets — RP2350 (blocking and async), ESP32-C3, and RP2040 — each
+  rendering four distinct gray levels correctly.
+
 ## [0.5.0] - 2026-09-25
 
 ### Added
@@ -571,7 +586,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/melastmohican/epdsi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/melastmohican/epdsi/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/melastmohican/epdsi/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/melastmohican/epdsi/compare/v0.4.0...v0.4.1

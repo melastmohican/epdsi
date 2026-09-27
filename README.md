@@ -31,7 +31,7 @@ A `no_std`, [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) 1.0 
 | **JD79661** (`Jd79661Controller` / `Jd7966xController`) | `ZJY122250_0213AJH_E5` / `GDEY0213F51` | 122 × 250 | Quad-Color | 2.13" Quad-Color ([Good Display GDEY0213F51](https://www.good-display.com/product/463.html), [Seeed Studio 5779](https://www.seeedstudio.com/2-13-Quadruple-Color-ePaper-Display-with-122x250-Pixels-p-5779.html), [Adafruit 6373](https://www.adafruit.com/product/6373), Active-Low BUSY) |
 | **JD79660A** (`Jd79660Controller` / `Jd7966xController`) | `GDEM0154F51H` (`GxEPD2_154c_GDEM0154F51H`) | 200 × 200 | Quad-Color | 1.54" Quad-Color [Good Display GDEM0154F51H](https://www.good-display.com/product/555.html) / [Waveshare 1.54inch e-Paper (G)](https://www.waveshare.com/1.54inch-e-paper-g.htm), SKU 30441, Active-Low BUSY, Full refresh only (~20 s). Shares its SPI register table with JD79661 (same `Jd7966xController`), differing only in which registers init writes. Hardware-verified blocking on RP2350, RP2040 and ESP32-C3, and async on RP2350 — ~19.7 s measured full refresh on RP2040 |
 | **UC8253** (`Uc8253Controller`) | `GDEY037T03` (`GxEPD2_370_GDEY037T03`), `SE0352N14TNGA0` | 240 × 416, 240 × 360 | Monochrome, Tri-Color | Both Active-Low BUSY. `GDEY037T03`: 3.7" Monochrome (Adafruit 6395), Full/FastFull/Partial/FastPartial refresh. `SE0352N14TNGA0`: [Waveshare 3.52" e-Paper HAT (B)](https://www.waveshare.com/3.52inch-e-paper-hat-b.htm), full refresh only (~16–20 s), needs `Uc8253Variant::Se0352n14` — the two panels disagree on init, RAM plane order and ink polarity |
-| **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh |
+| **SSD1677** (`Ssd1677Controller`) | `GDEQ0426T82` | 800 × 480 | Monochrome | 4.26" Monochrome (Seeed Studio 6398, SE8350/SSD1677), Full/FastFull/Partial refresh. Also supports [4-level grayscale](#4-level-grayscale-gray4-on-gdeq0426t82) via `GRAY4`/`Ssd1677RefreshMode::Gray4Preclear`+`Gray4` — Adafruit_EPD-sourced, not Seeed/Good Display — hardware-verified on all four boards this crate targets: RP2350 blocking and async, ESP32-C3, and RP2040 |
 | **ED2208** (`Ed2208Controller`) | `GDEP073E01` (`GxEPD2_730c_GDEP073E01`) | 800 × 480 | Spectra 6 (4bpp) | 7.3" six-colour E Ink Spectra 6 / `GDEP073E01(E6)` — black, white, red, yellow, blue, green. `SevenColor::Orange` is ACeP-7 only and **not** renderable here (Seeed reTerminal E1002) |
 | **Pervasive Displays** (`PervasiveBwController`) | `E2266KS0C1` (`EPD_266_KS_0C`), `E2290KS0F1` (`EPD_290_KS_0F`) | 152 × 296, 168 × 384 | Monochrome | Pervasive Displays 2.66" (Driver C) & 2.90" (Driver F) Panels |
 | **Pervasive Displays BWRY** (`PervasiveBwryController`) | `E2154QS0F1` (`EPD_154_QS_0F`), `E2417QS0A3` (`EPD_417_QS_0A`) | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) | Pervasive Displays 1.54" (Driver F) & 4.2" (Driver A), OTP-sourced registers read via a bit-banged 3-wire handshake (`epdsi::bus3::Spi3Bus`), Active-Low BUSY |
@@ -463,6 +463,48 @@ render_paged_gray4(
 
 [`GDEY0266T90`]: https://docs.rs/epdsi/latest/epdsi/panels/struct.GDEY0266T90.html
 
+#### 4-level grayscale (Gray4) on `GDEQ0426T82`
+
+`GDEQ0426T82` also supports 4-level grayscale, via a register bundle **not from Seeed/Good
+Display** — transcribed verbatim from Adafruit_EPD's `ThinkInk_426_Grayscale4_GDEQ` reference
+driver. Unlike `GDEY0266T90`'s single-pass Gray4 above, `Adafruit_SSD1677::update()`'s grayscale
+branch is **two-pass**: a full refresh with the OTP LUT (Red/Yellow plane bypassed) sets a known
+monochrome baseline, then the custom LUT and voltage registers are reloaded, then a second refresh
+with the real Black/White (LSB) and Red/Yellow (MSB) planes — so this needs `Ssd1677Controller`'s
+own `Gray4Preclear`/`Gray4` refresh-mode pair and `reload_gray4_lut`, not the generic
+`render_paged_gray4`. Hardware-verified rendering four distinct gray levels on all four boards this
+crate targets — see [`GDEQ0426T82`]'s doc for the full provenance note.
+
+```rust,ignore
+use epdsi::prelude::*;
+
+let epd_bus = SpiBusWrapper::new(spi_device, dc_pin, rst_pin, busy_pin);
+let controller = Ssd1677Controller::for_panel::<GDEQ0426T82>()
+    .with_gray4(GDEQ0426T82::GRAY4)
+    .with_refresh_mode(Ssd1677RefreshMode::Gray4Preclear);
+let mut epd = EpdBuilder::<_, GDEQ0426T82>::new(controller).build(epd_bus);
+
+epd.init(&mut delay).unwrap();
+
+// Pass 1: preclear — the same Black/White (LSB) content goes to both channels.
+epd.write_frame(ColorChannel::BlackWhite, &plane_a_buf).unwrap();
+epd.write_frame(ColorChannel::RedYellow, &plane_a_buf).unwrap();
+epd.refresh(&mut delay).unwrap();
+
+// The preclear refresh's OTP LUT load overwrote the custom LUT/voltage registers uploaded
+// during init — reload them before the real Gray4 refresh.
+let (bus, controller) = epd.split_mut();
+controller.reload_gray4_lut(bus).unwrap();
+epd.controller_mut().set_refresh_mode(Ssd1677RefreshMode::Gray4);
+
+// Pass 2: the real image — Black/White (LSB) and Red/Yellow (MSB) planes.
+epd.write_frame(ColorChannel::BlackWhite, &plane_a_buf).unwrap();
+epd.write_frame(ColorChannel::RedYellow, &plane_b_buf).unwrap();
+epd.refresh(&mut delay).unwrap();
+```
+
+[`GDEQ0426T82`]: https://docs.rs/epdsi/latest/epdsi/panels/struct.GDEQ0426T82.html
+
 ### 12. Usage Example (Jd79660Controller + GDEM0154F51H Panel)
 
 ```rust,ignore
@@ -513,6 +555,7 @@ async producing the same on-panel result from the same driver code:
 | [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_gdey037t03_epd.rs) | `GDEY037T03` — 3.7" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0` — 3.52" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Ssd1677Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `GDEQ0426T82` — 4.26" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Ssd1677Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_gray4_epd.rs) | `GDEQ0426T82` — 4.26" Gray4 | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) (Driver C) | `E2266KS0C1` — 2.66" Mono | RP2350 | RP2350 |
 | [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) (Driver F) | `E2290KS0F1` — 2.90" Mono | RP2350 | RP2350 |
 | [`PervasiveBwryController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) (Driver F) | `E2154QS0F1` — 1.54" Spectra-4 | RP2350 | RP2350 |

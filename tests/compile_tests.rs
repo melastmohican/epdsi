@@ -262,6 +262,49 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn ssd1677_gdeq0426t82_gray4_preclear_paged_rendering_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let controller = Ssd1677Controller::for_panel::<GDEQ0426T82>().with_gray4(GDEQ0426T82::GRAY4);
+    let mut driver = EpdBuilder::<_, GDEQ0426T82>::new(controller).build(bus);
+
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
+
+    // 800 is byte-aligned: 100 bytes per line, one buffer per plane, 16-row page.
+    let mut plane_a_page_buffer = [0u8; (800 / 8) * 16];
+    let mut plane_b_page_buffer = [0u8; (800 / 8) * 16];
+    render_paged_gray4_preclear(
+        &mut driver,
+        &mut delay,
+        (&mut plane_a_page_buffer, &mut plane_b_page_buffer),
+        Gray4Polarity::ADAFRUIT_SSD1677,
+        16,
+        |page_buf| {
+            let y = page_buf.plane_a().y_offset() + 2;
+            page_buf.set_pixel(10, y, Gray4Color::White);
+            page_buf.set_pixel(11, y, Gray4Color::Light);
+            page_buf.set_pixel(12, y, Gray4Color::Dark);
+            page_buf.set_pixel(13, y, Gray4Color::Black);
+        },
+    )
+    .await
+    .expect("Gray4 two-pass paged rendering failed");
+}
+epd_test!(
+    test_ssd1677_gdeq0426t82_gray4_preclear_paged_rendering,
+    ssd1677_gdeq0426t82_gray4_preclear_paged_rendering_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn jd79661_epd_driver_instantiation_and_frame_write_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);

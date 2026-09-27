@@ -11,21 +11,21 @@
 
 #[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-#[cfg(not(feature = "blocking"))]
-use embedded_hal_async::delay::DelayNs;
 #[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
 #[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
+#[cfg(not(feature = "blocking"))]
 use embedded_hal_async::spi::SpiDevice;
 
-use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(feature = "blocking")]
 use embedded_hal::digital::InputPin as Wait;
+use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::digital::Wait;
 
 use crate::bus::{EpdBusError, SpiBusWrapper};
-use crate::traits::{ColorChannel, EpdController, EpdPanel};
+use crate::traits::{ColorChannel, EpdController, EpdPanel, Gray4Registers};
 
 /// SSD1677 Command Definitions
 pub mod cmd {
@@ -33,6 +33,10 @@ pub mod cmd {
     pub const DRIVER_CONTROL: u8 = 0x01;
     /// Gate driving voltage control
     pub const GATE_VOLTAGE: u8 = 0x03;
+    /// Source driving voltage control. Only used by Gray4 mode today — part of the same
+    /// waveform-setting block as [`WRITE_LUT_REGISTER`], [`GATE_VOLTAGE`] and
+    /// [`WRITE_VCOM_REGISTER`].
+    pub const SOURCE_VOLTAGE: u8 = 0x04;
     /// Booster soft-start control
     pub const BOOSTER_SOFT_START: u8 = 0x0C;
     /// Deep sleep mode entry
@@ -87,6 +91,27 @@ pub enum Ssd1677RefreshMode {
     FastFull,
     /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFC`).
     Partial,
+    /// First pass of the two-pass Gray4 sequence (see [`EpdPanel::GRAY4`]): a full refresh using
+    /// the OTP LUT with the Red/Yellow RAM plane bypassed (`DISPLAY_UPDATE_CTRL1 = [0x40, 0x00]`,
+    /// `UPDATE_DISPLAY_CTRL2 = 0xF7`). Ported from `Adafruit_SSD1677::update()`'s grayscale
+    /// branch, which needs a known monochrome baseline on the glass before the custom LUT's
+    /// differential waveform can render intermediate gray levels correctly — unlike
+    /// [`Ssd168xRefreshMode::Gray4`](crate::controllers::Ssd168xRefreshMode::Gray4), which fires
+    /// its custom-LUT trigger bare because `Adafruit_SSD1680::update()` has no such preclear step.
+    ///
+    /// Before triggering this, write the same Black/White plane content to *both* the
+    /// `BlackWhite` and `RedYellow` channels. Afterward, call
+    /// [`Ssd1677Controller::reload_gray4_lut`] before writing the real data and refreshing again
+    /// with [`Self::Gray4`] — the OTP LUT load this mode performs overwrites the custom LUT
+    /// uploaded during `init_sequence`. [`render_paged_gray4_preclear`](crate::graphics::paged::render_paged_gray4_preclear)
+    /// drives this whole sequence.
+    Gray4Preclear,
+    /// Second (final) pass of the two-pass Gray4 sequence: `DISPLAY_UPDATE_CTRL1 = [0x00, 0x00]`
+    /// (NORMAL — use both Black/White and Red/Yellow planes), `UPDATE_DISPLAY_CTRL2 = 0xCF`
+    /// (custom LUT, full power cycle). Must follow a [`Self::Gray4Preclear`] refresh and a
+    /// [`Ssd1677Controller::reload_gray4_lut`] call, with the real Black/White (LSB) and
+    /// Red/Yellow (MSB) planes already written.
+    Gray4,
 }
 
 /// SSD1677 Controller IC driver configuration.
@@ -98,6 +123,7 @@ pub struct Ssd1677Controller {
     vcom: Option<u8>,
     gate_voltage: Option<u8>,
     custom_lut: Option<&'static [u8]>,
+    gray4: Option<Gray4Registers>,
     ram_auto_fill: bool,
     /// Visible-space origin of the last window set, so the RAM address counter can be restored
     /// after a hardware fill sweep leaves it wherever it finished.
@@ -114,6 +140,7 @@ impl Ssd1677Controller {
             vcom: None,
             gate_voltage: None,
             custom_lut: None,
+            gray4: None,
             ram_auto_fill: true,
             window_origin: (0, 0),
         }
@@ -197,6 +224,27 @@ impl Ssd1677Controller {
     /// Returns the configured custom LUT, if any.
     pub fn custom_lut(&self) -> Option<&'static [u8]> {
         self.custom_lut
+    }
+
+    /// Sets the 4-level grayscale register bundle written during init (builder method).
+    ///
+    /// `None` — the default — leaves the panel on plain monochrome. Not read automatically by
+    /// [`for_panel`](Self::for_panel); pass `P::GRAY4` explicitly, since Gray4 is a wholly
+    /// different, mutually exclusive waveform configuration rather than an additive tweak — same
+    /// convention as [`Ssd168xController::with_gray4`](crate::controllers::Ssd168xController::with_gray4).
+    ///
+    /// Unlike the SSD168x family, this controller's Gray4 sequence is two-pass (see
+    /// [`Ssd1677RefreshMode::Gray4Preclear`]/[`Gray4`](Ssd1677RefreshMode::Gray4)) — drive it with
+    /// [`render_paged_gray4_preclear`](crate::graphics::paged::render_paged_gray4_preclear)
+    /// rather than the generic `render_paged_gray4`.
+    pub fn with_gray4(mut self, gray4: Option<Gray4Registers>) -> Self {
+        self.gray4 = gray4;
+        self
+    }
+
+    /// Returns the configured Gray4 register bundle, if any.
+    pub fn gray4(&self) -> Option<Gray4Registers> {
+        self.gray4
     }
 
     /// Enables or disables the RAM auto-fill fast path for uniform frame fills (builder method).
@@ -322,9 +370,16 @@ where
         bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])
             .await?;
 
-        // Booster Soft-Start Control (wider payload than SSD1680/SSD1681)
-        bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0xAE, 0xC7, 0xC3, 0xC0, 0x80])
-            .await?;
+        // Booster Soft-Start Control (wider payload than SSD1680/SSD1681). Gray4 mode uses a
+        // different last byte (0x40 vs 0x80) — ported from `ti_426_gray4_init_code`, this
+        // controller's only Gray4 reference; the plain path's 0x80 is unrelated GxEPD2 material
+        // and stays as-is.
+        let booster_last_byte = if self.gray4.is_some() { 0x40 } else { 0x80 };
+        bus.send_command_with_data(
+            cmd::BOOSTER_SOFT_START,
+            &[0xAE, 0xC7, 0xC3, 0xC0, booster_last_byte],
+        )
+        .await?;
 
         // Driver output control: setting display height
         let h_low = ((self.height - 1) & 0xFF) as u8;
@@ -338,24 +393,36 @@ where
 
         // Panel-declared analog overrides, in the order GxEPD2's SSD168x-family drivers write
         // them. Both absent by default — `GxEPD2_426_GDEQ0426T82` writes neither, so the only
-        // panel this controller drives today emits nothing here.
-        if let Some(vcom) = self.vcom {
-            bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])
-                .await?;
-        }
-        if let Some(gate_voltage) = self.gate_voltage {
-            bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])
-                .await?;
+        // panel this controller drives today emits nothing here. Skipped entirely when Gray4 is
+        // active: its own VCOM/gate-voltage values are reloaded after the LUT below instead (see
+        // `reload_gray4_lut`), not written here.
+        if self.gray4.is_none() {
+            if let Some(vcom) = self.vcom {
+                bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[vcom])
+                    .await?;
+            }
+            if let Some(gate_voltage) = self.gate_voltage {
+                bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gate_voltage])
+                    .await?;
+            }
         }
 
         // Set RAM Area to full display frame. `set_window` also asserts the Increment-X /
-        // Decrement-Y data entry mode the reversed gates require.
+        // Decrement-Y data entry mode the reversed gates require. Gray4 mode reuses this
+        // unchanged — the physical Y-reversal workaround is orthogonal to which waveform LUT is
+        // active.
         self.set_window(bus, 0, 0, self.width - 1, self.height - 1)
             .await?;
         self.set_cursor(bus, 0, 0).await?;
 
-        // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`.
-        if let Some(lut) = self.custom_lut {
+        if self.gray4.is_some() {
+            // Gray4's LUT + voltage-register bundle, loaded once here and reloaded again
+            // mid-refresh by `reload_gray4_lut` (see `Ssd1677RefreshMode::Gray4Preclear`'s doc for
+            // why). Matches `Adafruit_SSD1677::powerUp()`, which runs `_epd_init_code` then
+            // `_epd_lut_code` unconditionally.
+            self.reload_gray4_lut(bus).await?;
+        } else if let Some(lut) = self.custom_lut {
+            // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`.
             bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)
                 .await?;
         }
@@ -493,7 +560,8 @@ where
     ) -> Result<(), Self::Error> {
         let bypass = match self.refresh_mode {
             Ssd1677RefreshMode::Full | Ssd1677RefreshMode::FastFull => [0x40, 0x00],
-            Ssd1677RefreshMode::Partial => [0x00, 0x00],
+            Ssd1677RefreshMode::Partial | Ssd1677RefreshMode::Gray4 => [0x00, 0x00],
+            Ssd1677RefreshMode::Gray4Preclear => [0x40, 0x00],
         };
         bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &bypass)
             .await?;
@@ -507,6 +575,8 @@ where
             Ssd1677RefreshMode::Full => 0xF7,
             Ssd1677RefreshMode::FastFull => 0xD7,
             Ssd1677RefreshMode::Partial => 0xFC,
+            Ssd1677RefreshMode::Gray4Preclear => 0xF7,
+            Ssd1677RefreshMode::Gray4 => 0xCF,
         };
         bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])
             .await?;
@@ -520,6 +590,51 @@ where
         _delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::DEEP_SLEEP_MODE, &[0x01])
+            .await
+    }
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl Ssd1677Controller {
+    /// Reloads the Gray4 waveform LUT and gate/source/VCOM voltage registers, in that order.
+    ///
+    /// Called once from `init_sequence` (matching `Adafruit_SSD1677::powerUp()`'s unconditional
+    /// `_epd_lut_code` load) and again mid-refresh by
+    /// [`render_paged_gray4_preclear`](crate::graphics::paged::render_paged_gray4_preclear),
+    /// between a [`Ssd1677RefreshMode::Gray4Preclear`] refresh and the final
+    /// [`Ssd1677RefreshMode::Gray4`] one — the preclear pass's OTP LUT load overwrites the custom
+    /// LUT, so it needs re-uploading before the final pass can use it.
+    ///
+    /// Ported from Adafruit_EPD's `ti_426_gray4_lut_code`: the LUT goes first, then the voltage
+    /// registers — reversed from [`Ssd168xController`](crate::controllers::Ssd168xController)'s
+    /// Gray4 ordering, because Adafruit's own source notes the OTP LUT load can reset voltage
+    /// settings, so they must be (re)written *after* it, not before.
+    ///
+    /// A no-op (`Ok(())`) if no [`Gray4Registers`] is configured via [`Self::with_gray4`].
+    #[allow(clippy::type_complexity)]
+    pub async fn reload_gray4_lut<SPI, DC, RST, BUSY>(
+        &self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+    ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+    where
+        SPI: SpiDevice,
+        DC: OutputPin,
+        RST: OutputPin,
+        BUSY: InputPin + Wait,
+    {
+        let Some(gray4) = &self.gray4 else {
+            return Ok(());
+        };
+        bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, gray4.lut)
+            .await?;
+        bus.send_command_with_data(cmd::GATE_VOLTAGE, &[gray4.gate_voltage])
+            .await?;
+        bus.send_command_with_data(cmd::SOURCE_VOLTAGE, &gray4.source_voltage)
+            .await?;
+        bus.send_command_with_data(cmd::WRITE_VCOM_REGISTER, &[gray4.vcom])
             .await
     }
 }

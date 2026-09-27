@@ -124,6 +124,12 @@
 //! see [`Gray4Registers`](traits::Gray4Registers)'s doc for the "not vendor material" caveat),
 //! handing the closure a [`GrayBufferPair`] per page.
 //!
+//! [`render_paged_gray4_preclear`](graphics::render_paged_gray4_preclear) is the two-pass
+//! counterpart for `GDEQ0426T82`'s Gray4 mode (`Ssd1677Controller`) — that chip's grayscale
+//! refresh needs a baseline mono pass and an LUT reload between two refreshes, which the
+//! single-pass `render_paged_gray4` cannot express, so this is a dedicated function rather than a
+//! generic one.
+//!
 //! # Colour panels refresh slowly, and that is physics
 //!
 //! Tri-Color and Quad-Color panels have no fast differential waveform. The coloured

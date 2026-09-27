@@ -417,6 +417,18 @@ impl Gray4Polarity {
         plane_b_ink_is_set_bit: true,
     };
 
+    /// Adafruit's SSD1677 Gray4 convention (`GDEQ0426T82`): **both** planes inverted, unlike
+    /// [`Self::ADAFRUIT_SSD1680`]. Derived directly from `ThinkInk_426_Grayscale4_GDEQ.h`'s
+    /// `setBlackBuffer(0, true)` / `setColorBuffer(1, true)` (both planes marked inverted) and its
+    /// `layer_colors` table — `WHITE=0b00, BLACK=0b11, LIGHT=0b10, DARK=0b01`, note `LIGHT` and
+    /// `DARK` land on *swapped* bit patterns relative to [`Self::ADAFRUIT_SSD1680`]'s numbering,
+    /// which this crate's fixed [`Gray4Color`] plane-bit ordering already accounts for once both
+    /// planes are inverted.
+    pub const ADAFRUIT_SSD1677: Self = Self {
+        plane_a_ink_is_set_bit: false,
+        plane_b_ink_is_set_bit: false,
+    };
+
     /// The background (`Gray4Color::White`) fill byte for the Black/White plane under this
     /// polarity.
     pub const fn plane_a_background_byte(&self) -> u8 {

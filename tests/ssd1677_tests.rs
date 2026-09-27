@@ -70,7 +70,10 @@ async fn ssd1677_set_window_sub_rectangle_y_reversal_body() {
 
     // x_start=100 rounds down to pixel 96 (0x0060), x_end=199 rounds up to pixel 199 (0x00C7),
     // y_start=50, y_end=99 (h=50). yy = 480-50-50 = 380 = 0x017C, yy_end = 480-50-1 = 429 = 0x01AD.
-    controller.set_window(&mut bus, 100, 50, 199, 99).await.unwrap();
+    controller
+        .set_window(&mut bus, 100, 50, 199, 99)
+        .await
+        .unwrap();
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
@@ -329,7 +332,10 @@ async fn ssd1677_write_frame_pattern_streams_the_fill_byte_body() {
         records.len(),
         4,
         "expected WRITE_BW_DATA plus three streamed chunks, got {:?}",
-        records.iter().map(std::mem::discriminant).collect::<Vec<_>>()
+        records
+            .iter()
+            .map(std::mem::discriminant)
+            .collect::<Vec<_>>()
     );
     assert_eq!(records[0], SpiRecord::Command(0x24));
     assert_eq!(records[1], SpiRecord::Data(vec![0xFF; 64]));
@@ -413,8 +419,14 @@ async fn ssd1677_clear_frame_uses_the_auto_fill_registers_body() {
     let controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
     let mut driver = EpdBuilder::<_, GDEQ0426T82>::new(controller).build(bus);
 
-    driver.clear_frame(ColorChannel::BlackWhite, 0xFF).await.unwrap();
-    driver.clear_frame(ColorChannel::RedYellow, 0x00).await.unwrap();
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .await
+        .unwrap();
+    driver
+        .clear_frame(ColorChannel::RedYellow, 0x00)
+        .await
+        .unwrap();
 
     // 0xF7: A[7]=1 first step value, A[6:4]=111 step height 680 gates, A[2:0]=111 step width
     // 960 sources. Both steps span the 800 x 480 panel, so the pattern never alternates inside
@@ -458,7 +470,10 @@ async fn ssd1677_auto_fill_restores_the_cursor_to_a_narrowed_window_body() {
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
     let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
 
-    controller.set_window(&mut bus, 100, 50, 199, 99).await.unwrap();
+    controller
+        .set_window(&mut bus, 100, 50, 199, 99)
+        .await
+        .unwrap();
     bus_backend.records.borrow_mut().clear();
 
     // A full-plane count still auto-fills; the sweep paints the RAM area, which is the window.
@@ -612,6 +627,173 @@ async fn ssd1677_for_panel_is_byte_identical_to_the_hand_wired_form_body() {
 epd_test!(
     test_ssd1677_for_panel_is_byte_identical_to_the_hand_wired_form,
     ssd1677_for_panel_is_byte_identical_to_the_hand_wired_form_body
+);
+
+// --- Gray4 (Phase 4): two-pass grayscale, ported from `Adafruit_SSD1677::update()` -------------
+
+#[test]
+fn test_ssd1677_gdeq0426t82_gray4_lut_is_105_bytes() {
+    let gray4 = GDEQ0426T82::GRAY4.unwrap();
+    assert_eq!(
+        gray4.lut.len(),
+        105,
+        "SSD1677's Gray4 LUT is shorter than SSD168x's 233 bytes"
+    );
+    assert_eq!(gray4.gate_voltage, 0x17);
+    assert_eq!(gray4.source_voltage, [0x41, 0xA8, 0x32]);
+    assert_eq!(gray4.vcom, 0x30);
+    assert_eq!(gray4.border_waveform, 0x01);
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1677_gray4_init_sequence_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_gray4(GDEQ0426T82::GRAY4);
+    let mut delay = DummyDelay;
+    let gray4 = GDEQ0426T82::GRAY4.unwrap();
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    // Gray4's analog/waveform block (LUT + gate/source/VCOM voltages) entirely replaces the
+    // plain path's VCOM/gate-voltage hook and custom-LUT tail, matching
+    // `Adafruit_SSD1677::powerUp()`'s unconditional `_epd_init_code` + `_epd_lut_code` load. Note
+    // the booster soft-start's last byte (0x40, not the plain path's 0x80) — ported directly from
+    // `ti_426_gray4_init_code`, the crate's only Gray4 reference for this controller.
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x12), // SW_RESET
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x0C), // BOOSTER_SOFT_START
+            SpiRecord::Data(vec![0xAE, 0xC7, 0xC3, 0xC0, 0x40]),
+            SpiRecord::Command(0x01), // DRIVER_CONTROL
+            SpiRecord::Data(vec![0xDF, 0x01, 0x02]),
+            SpiRecord::Command(0x3C), // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x01]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE, asserted by set_window (unchanged by Gray4)
+            SpiRecord::Data(vec![0x01]),
+            SpiRecord::Command(0x44), // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0x1F, 0x03]),
+            SpiRecord::Command(0x45), // SET_RAMYPOS
+            SpiRecord::Data(vec![0xDF, 0x01, 0x00, 0x00]),
+            SpiRecord::Command(0x4E), // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0xDF, 0x01]),
+            SpiRecord::Command(0x32), // WRITE_LUT_REGISTER — LUT first
+            SpiRecord::Data(gray4.lut.to_vec()),
+            SpiRecord::Command(0x03), // GATE_VOLTAGE — then voltages, per Adafruit's own ordering
+            SpiRecord::Data(vec![0x17]),
+            SpiRecord::Command(0x04), // SOURCE_VOLTAGE
+            SpiRecord::Data(vec![0x41, 0xA8, 0x32]),
+            SpiRecord::Command(0x2C), // WRITE_VCOM_REGISTER
+            SpiRecord::Data(vec![0x30]),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1677_gray4_init_sequence,
+    ssd1677_gray4_init_sequence_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1677_reload_gray4_lut_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let gray4 = GDEQ0426T82::GRAY4.unwrap();
+    let controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_gray4(GDEQ0426T82::GRAY4);
+
+    controller.reload_gray4_lut(&mut bus).await.unwrap();
+
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x32),
+            SpiRecord::Data(gray4.lut.to_vec()),
+            SpiRecord::Command(0x03),
+            SpiRecord::Data(vec![0x17]),
+            SpiRecord::Command(0x04),
+            SpiRecord::Data(vec![0x41, 0xA8, 0x32]),
+            SpiRecord::Command(0x2C),
+            SpiRecord::Data(vec![0x30]),
+        ]
+    );
+
+    // No Gray4 configured: a no-op, not an error and not a partial write.
+    bus_backend.records.borrow_mut().clear();
+    let plain_controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT);
+    plain_controller.reload_gray4_lut(&mut bus).await.unwrap();
+    assert_eq!(bus_backend.records.borrow().clone(), vec![]);
+}
+epd_test!(test_ssd1677_reload_gray4_lut, ssd1677_reload_gray4_lut_body);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1677_trigger_refresh_gray4_preclear_and_gray4_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = DummyDelay;
+
+    // Preclear pass: bypass Red/Yellow, OTP LUT (0xF7) — same mode byte as `Full`, different
+    // `DISPLAY_UPDATE_CTRL1` bypass than `Gray4`'s final pass.
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_refresh_mode(Ssd1677RefreshMode::Gray4Preclear);
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x21),
+            SpiRecord::Data(vec![0x40, 0x00]),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xF7]),
+            SpiRecord::Command(0x20),
+        ]
+    );
+
+    // Final pass: NORMAL (both planes), custom LUT full power cycle (0xCF).
+    bus_backend.records.borrow_mut().clear();
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_refresh_mode(Ssd1677RefreshMode::Gray4);
+    controller
+        .trigger_refresh(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![
+            SpiRecord::Command(0x21),
+            SpiRecord::Data(vec![0x00, 0x00]),
+            SpiRecord::Command(0x22),
+            SpiRecord::Data(vec![0xCF]),
+            SpiRecord::Command(0x20),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1677_trigger_refresh_gray4_preclear_and_gray4,
+    ssd1677_trigger_refresh_gray4_preclear_and_gray4_body
 );
 
 #[test]

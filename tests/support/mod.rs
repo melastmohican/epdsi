@@ -8,17 +8,17 @@ use core::cell::RefCell;
 
 #[cfg(feature = "blocking")]
 use embedded_hal::delay::DelayNs;
-#[cfg(not(feature = "blocking"))]
-use embedded_hal_async::delay::DelayNs;
 #[cfg(feature = "blocking")]
 use embedded_hal::spi::SpiDevice;
+#[cfg(not(feature = "blocking"))]
+use embedded_hal_async::delay::DelayNs;
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::spi::SpiDevice;
 
 use embedded_hal::digital::{ErrorType as DigitalErrorType, InputPin, OutputPin};
+use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation};
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::digital::Wait;
-use embedded_hal::spi::{ErrorKind, ErrorType as SpiErrorType, Operation};
 
 /// Picks a direct call (blocking) or `pollster::block_on` (async) for one test body function,
 /// so the body itself — written once, async-first — is the only thing that differs per test.

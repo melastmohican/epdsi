@@ -15,7 +15,9 @@ pub use crate::graphics::buffer::{
     DisplayRotation, Gray4Color, Gray4Polarity, GrayBufferPair, PageBuffer, PageBufferPair,
     PlanePolarity, TriColor,
 };
-pub use crate::graphics::paged::{render_paged, render_paged_gray4, render_paged_tri_color};
+pub use crate::graphics::paged::{
+    render_paged, render_paged_gray4, render_paged_gray4_preclear, render_paged_tri_color,
+};
 pub use crate::panels::{
     GxEPD2_154c_GDEM0154F51H, GxEPD2_213_B74, GxEPD2_266_GDEY0266T90, GxEPD2_266c,
     GxEPD2_370_GDEY037T03, GxEPD2_730c_GDEP073E01, E2154QS0F1, E2266KS0C1, E2290KS0F1, E2417QS0A3,
