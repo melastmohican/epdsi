@@ -117,3 +117,15 @@ jobs:
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.body }}
           generate_release_notes: false
+
+      - name: Post release announcement to Mastodon
+        env:
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          changelog="${{ steps.changelog.outputs.body }}"
+          status="epdsi v${version} released 🎉"$'\n\n'"${changelog}"$'\n\n'"https://crates.io/crates/epdsi"
+          curl -sS -X POST "https://fosstodon.org/api/v1/statuses" \
+            -H "Authorization: Bearer ${MASTODON_ACCESS_TOKEN}" \
+            --data-urlencode "status=${status}" \
+            --data-urlencode "visibility=public"
