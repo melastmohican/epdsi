@@ -61,3 +61,8 @@ The exception is a panel that shares an IC but not its register profile, which a
 
 EXT3-1 extension boards: the **J3 jumper** must be **OPEN** (10 µH path) for panels ≤ 3.7" (e.g. 2.66", 2.9"). Closed (47 µH path) causes DC-DC booster power sag and BUSY-pin hangs on small panels — relevant when debugging reported hardware behavior, not something code can fix.
 
+## Working conventions
+
+- **Zero-trust on backlog items.** Before implementing anything from `.agents/notes/backlog.md` (or any other planning note), re-derive every factual claim it makes (byte counts, register addresses, timing values) from a primary source: the actual IC datasheet, vendor reference code, or the current `src/` tree. Don't trust the backlog note's own prose. A backlog item's effort estimate usually covers the code shape only, not whether its stated hardware numbers are correct; those need independent verification every time.
+- **Documentation gets humanized as it's written.** New documentation text (Rust doc comments, `.agents/notes/*.md` entries, README prose, any markdown) should read like a person wrote it: no em dashes, no negative-parallelism reframes ("it's not X, it's Y"), no AI-tell vocabulary (delve, robust, seamless, etc.). This applies forward-only, to text actually being authored in the current edit. It is not a license to sweep a whole file for em dashes just because one line in it changed.
+

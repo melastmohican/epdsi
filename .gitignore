@@ -9,3 +9,6 @@
 .vscode/
 *.swp
 *.swo
+
+# Claude Code auto memory (project-local, see .claude/settings.local.json)
+/.memory
