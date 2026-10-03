@@ -15,7 +15,7 @@ use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::digital::Wait;
 
-use crate::bus::{EpdBusError, SpiBusWrapper};
+use crate::bus::{EpdBusError, SpiBusWrapper, ValidationError};
 use crate::traits::{ColorChannel, EpdController, EpdPanel, Gray4Registers};
 
 /// SSD168x Command Definitions
@@ -59,6 +59,12 @@ pub mod cmd {
     /// [`GATE_VOLTAGE`], [`SOURCE_VOLTAGE`] and [`WRITE_VCOM_REGISTER`]. Only used by Gray4 mode
     /// today. Adafruit's own source leaves this commented `// ???`; the datasheet does name it.
     pub const LUT_END_OPTION: u8 = 0x3F;
+    /// Exact byte length [`WRITE_LUT_REGISTER`]'s standard (non-Gray4) payload must be: WS bytes
+    /// 0 through 152 of the datasheet's waveform-setting block (152 - 0 + 1 = 153), the span that
+    /// ends right before [`LUT_END_OPTION`]'s own WS byte 153. Only the plain `with_lut` custom
+    /// LUT uses this constant. Gray4's LUT is a separate, longer bundle (see
+    /// [`crate::panels::GDEY0266T90`]'s 233-byte `GRAY4_LUT`), not validated against this length.
+    pub const WRITE_LUT_LEN: usize = 153;
     /// Set RAM X address start/end position
     pub const SET_RAMXPOS: u8 = 0x44;
     /// Set RAM Y address start/end position
@@ -242,7 +248,10 @@ impl Ssd1680Controller {
 
     /// Sets the custom waveform LUT uploaded to `0x32` at the end of init (builder method).
     ///
-    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform.
+    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform. A `Some`
+    /// slice must be exactly [`cmd::WRITE_LUT_LEN`] (153) bytes. Anything else makes `init()`
+    /// return [`ValidationError::InvalidLutLength`]
+    /// rather than sending a malformed payload to the panel.
     pub fn with_lut(mut self, lut: Option<&'static [u8]>) -> Self {
         self.inner = self.inner.with_lut(lut);
         self
@@ -347,7 +356,10 @@ impl Ssd1681Controller {
 
     /// Sets the custom waveform LUT uploaded to `0x32` at the end of init (builder method).
     ///
-    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform.
+    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform. A `Some`
+    /// slice must be exactly [`cmd::WRITE_LUT_LEN`] (153) bytes. Anything else makes `init()`
+    /// return [`ValidationError::InvalidLutLength`]
+    /// rather than sending a malformed payload to the panel.
     pub fn with_lut(mut self, lut: Option<&'static [u8]>) -> Self {
         self.inner = self.inner.with_lut(lut);
         self
@@ -500,9 +512,12 @@ impl Ssd168xController {
 
     /// Sets the custom waveform LUT uploaded to `0x32` at the end of init (builder method).
     ///
-    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform.
-    /// Ordering follows `GxEPD2_213_B72::_Init_Full()`: the LUT lands after the RAM window
-    /// and cursor are set, not in the middle of the register block.
+    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform. A `Some`
+    /// slice must be exactly [`cmd::WRITE_LUT_LEN`] (153) bytes. Anything else makes `init()`
+    /// return [`ValidationError::InvalidLutLength`]
+    /// rather than sending a malformed payload to the panel. Ordering follows
+    /// `GxEPD2_213_B72::_Init_Full()`: the LUT lands after the RAM window and cursor are set,
+    /// not in the middle of the register block.
     pub fn with_lut(mut self, lut: Option<&'static [u8]>) -> Self {
         self.custom_lut = lut;
         self
@@ -778,6 +793,13 @@ where
         // Skipped when Gray4 is active: its LUT was already uploaded above, as part of its own
         // mutually exclusive register block, not this one.
         if let Some(lut) = self.custom_lut.filter(|_| self.gray4.is_none()) {
+            if lut.len() != cmd::WRITE_LUT_LEN {
+                return Err(ValidationError::InvalidLutLength {
+                    expected: cmd::WRITE_LUT_LEN,
+                    provided: lut.len(),
+                }
+                .into());
+            }
             bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)
                 .await?;
         }

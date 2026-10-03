@@ -808,3 +808,72 @@ fn test_ssd1677_gdeq0426t82_declares_no_vcom() {
     let controller = Ssd1677Controller::for_panel::<GDEQ0426T82>();
     assert_eq!(controller.vcom(), None);
 }
+
+use epdsi::controllers::ssd1677::cmd;
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1677_custom_lut_of_the_right_length_reaches_the_wire_body() {
+    // 105 bytes: `cmd::WRITE_LUT_LEN`'s datasheet-cited length (WS byte 0~104). Content is an
+    // arbitrary placeholder: this exercises plumbing/ordering, not real waveform bytes.
+    const LUT: &[u8] = &[0x5A; 105];
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_lut(Some(LUT));
+    let mut delay = DummyDelay;
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+    assert_eq!(records.last(), Some(&SpiRecord::Data(vec![0x5A; 105])));
+    assert_eq!(
+        records[records.len() - 2],
+        SpiRecord::Command(cmd::WRITE_LUT_REGISTER)
+    );
+}
+epd_test!(
+    test_ssd1677_custom_lut_of_the_right_length_reaches_the_wire,
+    ssd1677_custom_lut_of_the_right_length_reaches_the_wire_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1677_rejects_a_custom_lut_of_the_wrong_length_body() {
+    // One byte short of `cmd::WRITE_LUT_LEN` (105): must be rejected before anything reaches
+    // the wire, not silently sent as a malformed payload.
+    let short_lut: &'static [u8] = &[0x5A; 104];
+    let mut controller = Ssd1677Controller::new(GDEQ0426T82::WIDTH, GDEQ0426T82::HEIGHT)
+        .with_lut(Some(short_lut));
+
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut delay = DummyDelay;
+    let err = controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidLutLength {
+            expected: cmd::WRITE_LUT_LEN,
+            provided: 104,
+        }
+    );
+    assert!(!bus_backend
+        .records
+        .borrow()
+        .contains(&SpiRecord::Command(cmd::WRITE_LUT_REGISTER)));
+}
+epd_test!(
+    test_ssd1677_rejects_a_custom_lut_of_the_wrong_length,
+    ssd1677_rejects_a_custom_lut_of_the_wrong_length_body
+);

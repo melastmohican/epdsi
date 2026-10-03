@@ -24,7 +24,7 @@ use embedded_hal::digital::{InputPin, OutputPin};
 #[cfg(not(feature = "blocking"))]
 use embedded_hal_async::digital::Wait;
 
-use crate::bus::{EpdBusError, SpiBusWrapper};
+use crate::bus::{EpdBusError, SpiBusWrapper, ValidationError};
 use crate::traits::{ColorChannel, EpdController, EpdPanel, Gray4Registers};
 
 /// SSD1677 Command Definitions
@@ -63,6 +63,15 @@ pub mod cmd {
     pub const WRITE_VCOM_REGISTER: u8 = 0x2C;
     /// Write LUT register (custom waveform upload)
     pub const WRITE_LUT_REGISTER: u8 = 0x32;
+    /// Exact byte length [`WRITE_LUT_REGISTER`]'s payload must be, per the SSD1677 datasheet's
+    /// Waveform Setting (WS) block: "WS byte 0~104, the content of `VS[n-XY]`, `TP[n#]`,
+    /// `RP[n]` and frame rate are defined by Register 0x32" (104 - 0 + 1 = 105). WS byte 105
+    /// (gate level) is
+    /// [`GATE_VOLTAGE`], 106~108 (source level) is [`SOURCE_VOLTAGE`], 109 (VCOM level) is
+    /// [`WRITE_VCOM_REGISTER`]. Unlike SSD1680/1681, this chip has no `LUT_END_OPTION`-style
+    /// register and no separate longer Gray4 format; `GDEQ0426T82::GRAY4`'s 105-byte LUT already
+    /// uses this exact length.
+    pub const WRITE_LUT_LEN: usize = 105;
     /// Border waveform control
     pub const BORDER_WAVEFORM_CONTROL: u8 = 0x3C;
     /// Auto write RED RAM for a regular pattern
@@ -215,7 +224,10 @@ impl Ssd1677Controller {
 
     /// Sets the custom waveform LUT uploaded to `0x32` at the end of init (builder method).
     ///
-    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform.
+    /// `None` — the default — omits the upload, leaving the panel on its OTP waveform. A `Some`
+    /// slice must be exactly [`cmd::WRITE_LUT_LEN`] (105) bytes. Anything else makes `init()`
+    /// return [`ValidationError::InvalidLutLength`]
+    /// rather than sending a malformed payload to the panel.
     pub fn with_lut(mut self, lut: Option<&'static [u8]>) -> Self {
         self.custom_lut = lut;
         self
@@ -422,6 +434,13 @@ where
             // `_epd_lut_code` unconditionally.
             self.reload_gray4_lut(bus).await?;
         } else if let Some(lut) = self.custom_lut {
+            if lut.len() != cmd::WRITE_LUT_LEN {
+                return Err(ValidationError::InvalidLutLength {
+                    expected: cmd::WRITE_LUT_LEN,
+                    provided: lut.len(),
+                }
+                .into());
+            }
             // Custom waveform upload goes last, matching `GxEPD2_213_B72::_Init_Full()`.
             bus.send_command_with_data(cmd::WRITE_LUT_REGISTER, lut)
                 .await?;

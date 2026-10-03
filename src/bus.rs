@@ -39,6 +39,15 @@ pub enum ValidationError {
     },
     /// A `set_window` call named coordinates outside the panel, or an inverted range.
     InvalidWindow,
+    /// A custom waveform LUT passed to `with_lut` doesn't match the controller's fixed
+    /// `WRITE_LUT_REGISTER` payload length (datasheet-defined per controller IC, not a panel
+    /// property); see each controller's `with_lut` doc for the exact byte count and citation.
+    InvalidLutLength {
+        /// Exact byte length the controller's `WRITE_LUT_REGISTER` command expects.
+        expected: usize,
+        /// Actual length of the slice the caller supplied.
+        provided: usize,
+    },
 }
 
 /// Bus error wrapper categorizing errors from SPI transfers or GPIO toggling.
@@ -63,6 +72,15 @@ pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
     },
     /// A `set_window` call named coordinates outside the panel, or an inverted range.
     InvalidWindow,
+    /// A custom waveform LUT passed to `with_lut` doesn't match the controller's fixed
+    /// `WRITE_LUT_REGISTER` payload length (datasheet-defined per controller IC, not a panel
+    /// property); see each controller's `with_lut` doc for the exact byte count and citation.
+    InvalidLutLength {
+        /// Exact byte length the controller's `WRITE_LUT_REGISTER` command expects.
+        expected: usize,
+        /// Actual length of the slice the caller supplied.
+        provided: usize,
+    },
 }
 
 impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RSTE, BUSYE> {
@@ -72,6 +90,9 @@ impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RS
                 EpdBusError::BufferTooSmall { required, provided }
             }
             ValidationError::InvalidWindow => EpdBusError::InvalidWindow,
+            ValidationError::InvalidLutLength { expected, provided } => {
+                EpdBusError::InvalidLutLength { expected, provided }
+            }
         }
     }
 }

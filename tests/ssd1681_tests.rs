@@ -163,7 +163,10 @@ epd_test!(
 /// these today; `GDEM0154Z90` deliberately does not, because `GxEPD2_154_Z90c` writes no VCOM.
 struct ConfiguredTestPanel;
 
-const TEST_LUT: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD];
+// 153 bytes: `Ssd1681Controller`'s required `WRITE_LUT_LEN` (see `cmd::WRITE_LUT_LEN`'s doc for
+// the datasheet citation). Content is an arbitrary placeholder: this test exercises plumbing
+// and wire ordering, not real waveform bytes.
+const TEST_LUT: &[u8] = &[0xAA; 153];
 
 impl EpdPanel for ConfiguredTestPanel {
     const WIDTH: u32 = 200;
@@ -271,13 +274,50 @@ async fn ssd1681_declared_config_reaches_the_wire_in_reference_order_body() {
             SpiRecord::Data(vec![0x00, 0x00]),
             // LUT last, after the RAM block — `GxEPD2_213_B72::_Init_Full()` order.
             SpiRecord::Command(0x32),
-            SpiRecord::Data(vec![0xAA, 0xBB, 0xCC, 0xDD]),
+            SpiRecord::Data(vec![0xAA; 153]),
         ]
     );
 }
 epd_test!(
     test_ssd1681_declared_config_reaches_the_wire_in_reference_order,
     ssd1681_declared_config_reaches_the_wire_in_reference_order_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_rejects_a_custom_lut_of_the_wrong_length_body() {
+    // One byte short of `cmd::WRITE_LUT_LEN` (153): must be rejected before anything reaches
+    // the wire, not silently truncated/padded onto `WRITE_LUT_REGISTER`.
+    let short_lut: &'static [u8] = &[0xAA; 152];
+    let controller = Ssd1681Controller::new(200, 200).with_lut(Some(short_lut));
+
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = controller;
+    let mut delay = DummyDelay;
+    let err = controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidLutLength {
+            expected: cmd::WRITE_LUT_LEN,
+            provided: 152,
+        }
+    );
+    // Nothing LUT-related should have reached the wire.
+    assert!(!bus_backend
+        .records
+        .borrow()
+        .contains(&SpiRecord::Command(0x32)));
+}
+epd_test!(
+    test_ssd1681_rejects_a_custom_lut_of_the_wrong_length,
+    ssd1681_rejects_a_custom_lut_of_the_wrong_length_body
 );
 
 #[maybe_async_cfg::maybe(
