@@ -254,10 +254,16 @@ async fn ssd1677_trigger_refresh_all_modes_body() {
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
+            // Partial-trigger preamble (hard reset has no SPI traffic; only the TEMP_CONTROL and
+            // BORDER_WAVEFORM_CONTROL writes that follow it do).
+            SpiRecord::Command(0x18),
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x3C),
+            SpiRecord::Data(vec![0x80]),
             SpiRecord::Command(0x21),
             SpiRecord::Data(vec![0x00, 0x00]),
             SpiRecord::Command(0x22),
-            SpiRecord::Data(vec![0xFC]),
+            SpiRecord::Data(vec![0xFF]),
             SpiRecord::Command(0x20),
         ]
     );

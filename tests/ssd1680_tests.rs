@@ -137,11 +137,15 @@ async fn ssd1680_trigger_refresh_full_and_partial_body() {
     assert_eq!(
         bus_backend.records.borrow().clone(),
         vec![
+            // Partial-trigger preamble (hard reset has no SPI traffic; only the
+            // BORDER_WAVEFORM_CONTROL write that follows it does).
+            SpiRecord::Command(0x3C),
+            SpiRecord::Data(vec![0x80]),
             SpiRecord::Command(0x22),
             SpiRecord::Data(vec![0xE0]),
             SpiRecord::Command(0x20),
             SpiRecord::Command(0x22),
-            SpiRecord::Data(vec![0xFC]),
+            SpiRecord::Data(vec![0xFF]),
             SpiRecord::Command(0x20),
             SpiRecord::Command(0x22),
             SpiRecord::Data(vec![0x83]),

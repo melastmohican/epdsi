@@ -98,7 +98,11 @@ pub enum Ssd1677RefreshMode {
     /// Full display update forced to a faster waveform via a direct temperature-register override
     /// (`WRITE_TEMP_REG = 0x5A`, `UPDATE_DISPLAY_CTRL2 = 0xD7`).
     FastFull,
-    /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFC`).
+    /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFF`).
+    ///
+    /// The trigger is preceded by a hard reset plus `TEMP_CONTROL = 0x80` and
+    /// `BORDER_WAVEFORM_CONTROL = 0x80`, matching Good Display's own `EPD_Dis_Part` reference for
+    /// `GDEQ0426T82`.
     Partial,
     /// First pass of the two-pass Gray4 sequence (see [`EpdPanel::GRAY4`]): a full refresh using
     /// the OTP LUT with the Red/Yellow RAM plane bypassed (`DISPLAY_UPDATE_CTRL1 = [0x40, 0x00]`,
@@ -580,8 +584,20 @@ where
     async fn trigger_refresh<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
+        // Good Display's own vendor demo for `GDEQ0426T82` (`Display_EPD_W21.cpp::EPD_Dis_Part`)
+        // precedes a partial trigger with a hard reset plus `TEMP_CONTROL = 0x80` and
+        // `BORDER_WAVEFORM_CONTROL = 0x80`, matching the same preamble confirmed for the SSD1680
+        // partial path in `GDEM0213B74`/`GDEY0266T90`'s own vendor packages.
+        if self.refresh_mode == Ssd1677RefreshMode::Partial {
+            bus.hard_reset(delay, 10).await?;
+            bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])
+                .await?;
+            bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x80])
+                .await?;
+        }
+
         let bypass = match self.refresh_mode {
             Ssd1677RefreshMode::Full | Ssd1677RefreshMode::FastFull => [0x40, 0x00],
             Ssd1677RefreshMode::Partial | Ssd1677RefreshMode::Gray4 => [0x00, 0x00],
@@ -598,7 +614,7 @@ where
         let mode_byte = match self.refresh_mode {
             Ssd1677RefreshMode::Full => 0xF7,
             Ssd1677RefreshMode::FastFull => 0xD7,
-            Ssd1677RefreshMode::Partial => 0xFC,
+            Ssd1677RefreshMode::Partial => 0xFF,
             Ssd1677RefreshMode::Gray4Preclear => 0xF7,
             Ssd1677RefreshMode::Gray4 => 0xCF,
         };

@@ -95,7 +95,12 @@ pub enum Ssd168xRefreshMode {
     /// The only mode usable on Tri-Color panels such as the `GDEM0154Z90`.
     #[default]
     Full,
-    /// Partial display update using the controller's built-in fast LUT (`UPDATE_DISPLAY_CTRL2 = 0xFC`).
+    /// Partial display update using the controller's built-in fast LUT
+    /// (`UPDATE_DISPLAY_CTRL2 = 0xFF` on SSD1680, `0xFC` on SSD1681).
+    ///
+    /// On SSD1680, the trigger is preceded by a hard reset and `BORDER_WAVEFORM_CONTROL = 0x80`,
+    /// matching Good Display's own `EPD_Dis_Part`/`EPD_Dis_PartAll` reference for
+    /// `GDEM0213B74`/`GDEY0266T90`/`GDEY0266Z90`.
     ///
     /// **Monochrome panels only** (e.g. `GDEM0213B74`). The fast LUT does not exist for colour
     /// panels: the red pigment has no differential waveform, so on a Tri-Color panel this runs at
@@ -927,7 +932,15 @@ where
 
         let mode_byte = match self.refresh_mode {
             Ssd168xRefreshMode::Full => 0xF7,
-            Ssd168xRefreshMode::Partial => 0xFC,
+            // Confirmed from Good Display's own `GDEM0213B74`/`GDEY0266T90` vendor packages
+            // (`EPD_Dis_Part`/`EPD_Dis_PartAll`), both SSD1680. No SSD1681 panel in this crate
+            // uses `Partial` (the one SSD1681 panel, `GDEM0154Z90`, is Tri-Color and documented
+            // as `Full`-only), so the SSD1681 byte stays the pre-existing `0xFC` rather than
+            // changing on no evidence.
+            Ssd168xRefreshMode::Partial => match self.variant {
+                Ssd168xVariant::Ssd1680 => 0xFF,
+                Ssd168xVariant::Ssd1681 => 0xFC,
+            },
             Ssd168xRefreshMode::FastFull => 0xC7,
             Ssd168xRefreshMode::BaseMap => 0xF4,
             // Unreachable: handled by the early return above.
@@ -936,10 +949,25 @@ where
 
         // Every mode goes through the same per-variant power envelope. The vendor references
         // activate the mode byte bare, but 0xC7 and 0xF4 are self-contained clock/analog
-        // sequences just like 0xF7 and 0xFC, so wrapping them in the SSD1680 arm's 0xE0/0x83
-        // is a superset of the vendor sequence rather than a change to it.
+        // sequences just like 0xF7 and the partial mode byte, so wrapping them in the SSD1680
+        // arm's 0xE0/0x83 is a superset of the vendor sequence rather than a change to it.
         match self.variant {
             Ssd168xVariant::Ssd1680 => {
+                // Good Display's own vendor demo (`Display_EPD_W21.cpp::EPD_Dis_Part`/
+                // `EPD_Dis_PartAll`) precedes a partial trigger with a hard reset and
+                // `BORDER_WAVEFORM_CONTROL = 0x80`, confirmed directly for `GDEM0213B74` and
+                // `GDEY0266T90`'s own vendor packages (byte-for-byte, including the function
+                // names). `GDEY0266Z90`'s own vendor demo doesn't do this (it uses a different,
+                // simpler `0x22=0x1C` trigger with no preamble at all), so this isn't
+                // vendor-confirmed for that specific panel, but its own partial mode already has
+                // no speed benefit either way, so applying the same preamble here keeps one
+                // shared code path instead of a per-panel branch.
+                if self.refresh_mode == Ssd168xRefreshMode::Partial {
+                    bus.hard_reset(delay, 10).await?;
+                    bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x80])
+                        .await?;
+                }
+
                 // Power on sequence
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xE0])
                     .await?;
