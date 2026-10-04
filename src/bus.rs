@@ -37,8 +37,24 @@ pub enum ValidationError {
         /// Actual length of the buffer the caller supplied.
         provided: usize,
     },
-    /// A `set_window` call named coordinates outside the panel, or an inverted range.
-    InvalidWindow,
+    /// A `set_window` call named coordinates outside the panel, or an inverted range. Carries
+    /// the caller's raw inputs plus the panel's actual bounds, so which of the four checks
+    /// failed (`x_start > x_end`, `y_start > y_end`, `x_end >= panel_width`,
+    /// `y_end >= panel_height`) is always reconstructible from the error alone.
+    InvalidWindow {
+        /// X start coordinate the caller passed to `set_window`.
+        x_start: u32,
+        /// Y start coordinate the caller passed to `set_window`.
+        y_start: u32,
+        /// X end coordinate the caller passed to `set_window`.
+        x_end: u32,
+        /// Y end coordinate the caller passed to `set_window`.
+        y_end: u32,
+        /// The panel's declared `PANEL::WIDTH`.
+        panel_width: u32,
+        /// The panel's declared `PANEL::HEIGHT`.
+        panel_height: u32,
+    },
     /// A custom waveform LUT passed to `with_lut` doesn't match the controller's fixed
     /// `WRITE_LUT_REGISTER` payload length (datasheet-defined per controller IC, not a panel
     /// property); see each controller's `with_lut` doc for the exact byte count and citation.
@@ -70,8 +86,22 @@ pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
         /// Actual length of the buffer the caller supplied.
         provided: usize,
     },
-    /// A `set_window` call named coordinates outside the panel, or an inverted range.
-    InvalidWindow,
+    /// A `set_window` call named coordinates outside the panel, or an inverted range. See
+    /// [`ValidationError::InvalidWindow`] for what each field means.
+    InvalidWindow {
+        /// X start coordinate the caller passed to `set_window`.
+        x_start: u32,
+        /// Y start coordinate the caller passed to `set_window`.
+        y_start: u32,
+        /// X end coordinate the caller passed to `set_window`.
+        x_end: u32,
+        /// Y end coordinate the caller passed to `set_window`.
+        y_end: u32,
+        /// The panel's declared `PANEL::WIDTH`.
+        panel_width: u32,
+        /// The panel's declared `PANEL::HEIGHT`.
+        panel_height: u32,
+    },
     /// A custom waveform LUT passed to `with_lut` doesn't match the controller's fixed
     /// `WRITE_LUT_REGISTER` payload length (datasheet-defined per controller IC, not a panel
     /// property); see each controller's `with_lut` doc for the exact byte count and citation.
@@ -89,7 +119,21 @@ impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RS
             ValidationError::BufferTooSmall { required, provided } => {
                 EpdBusError::BufferTooSmall { required, provided }
             }
-            ValidationError::InvalidWindow => EpdBusError::InvalidWindow,
+            ValidationError::InvalidWindow {
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                panel_width,
+                panel_height,
+            } => EpdBusError::InvalidWindow {
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                panel_width,
+                panel_height,
+            },
             ValidationError::InvalidLutLength { expected, provided } => {
                 EpdBusError::InvalidLutLength { expected, provided }
             }

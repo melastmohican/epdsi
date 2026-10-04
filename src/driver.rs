@@ -121,7 +121,8 @@ where
     ///
     /// Returns [`ValidationError::InvalidWindow`] (via `CONTROLLER::Error`) if the range is
     /// inverted or falls outside the panel's declared `PANEL::WIDTH`/`PANEL::HEIGHT`, without
-    /// sending anything to the bus.
+    /// sending anything to the bus. The error carries the raw inputs and the panel's actual
+    /// bounds, so a caller can tell which check failed and by how much.
     pub async fn set_window(
         &mut self,
         x_start: u32,
@@ -134,7 +135,14 @@ where
             || x_end >= PANEL::WIDTH
             || y_end >= PANEL::HEIGHT
         {
-            return Err(CONTROLLER::Error::from(ValidationError::InvalidWindow));
+            return Err(CONTROLLER::Error::from(ValidationError::InvalidWindow {
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                panel_width: PANEL::WIDTH,
+                panel_height: PANEL::HEIGHT,
+            }));
         }
         self.controller
             .set_window(&mut self.bus, x_start, y_start, x_end, y_end)

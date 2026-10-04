@@ -431,3 +431,47 @@ epd_test!(
     test_pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering,
     pervasive_e2266ks0c1_epd_driver_instantiation_and_paged_rendering_body
 );
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn set_window_reports_which_bound_failed_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEM0154Z90>::new(controller).build(bus);
+
+    // Out of bounds on X only (200x200 panel, valid indices 0..=199).
+    let err = driver.set_window(0, 0, 200, 50).await.unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidWindow {
+            x_start: 0,
+            y_start: 0,
+            x_end: 200,
+            y_end: 50,
+            panel_width: 200,
+            panel_height: 200,
+        }
+    );
+
+    // Inverted Y only.
+    let err = driver.set_window(0, 50, 100, 10).await.unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidWindow {
+            x_start: 0,
+            y_start: 50,
+            x_end: 100,
+            y_end: 10,
+            panel_width: 200,
+            panel_height: 200,
+        }
+    );
+}
+epd_test!(
+    test_set_window_reports_which_bound_failed,
+    set_window_reports_which_bound_failed_body
+);
