@@ -64,6 +64,18 @@ pub enum ValidationError {
         /// Actual length of the slice the caller supplied.
         provided: usize,
     },
+    /// A partial-window refresh named an odd `x` or `width`, or a zero `width`/`height`.
+    ///
+    /// `Ed2208Controller::trigger_partial_refresh`'s 4bpp I4 RAM format packs two pixels per
+    /// byte, so a window whose horizontal start or width isn't byte-aligned would split a byte
+    /// across the window boundary. Confirmed as a real constraint by Zephyr's independent
+    /// `ed2208_gca` driver, not an `epdsi`-specific restriction.
+    InvalidPartialWindowAlignment {
+        /// X start coordinate the caller passed to `trigger_partial_refresh`.
+        x: u32,
+        /// Width the caller passed to `trigger_partial_refresh`.
+        width: u32,
+    },
 }
 
 /// Bus error wrapper categorizing errors from SPI transfers or GPIO toggling.
@@ -111,6 +123,18 @@ pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
         /// Actual length of the slice the caller supplied.
         provided: usize,
     },
+    /// A partial-window refresh named an odd `x` or `width`, or a zero `width`/`height`.
+    ///
+    /// `Ed2208Controller::trigger_partial_refresh`'s 4bpp I4 RAM format packs two pixels per
+    /// byte, so a window whose horizontal start or width isn't byte-aligned would split a byte
+    /// across the window boundary. Confirmed as a real constraint by Zephyr's independent
+    /// `ed2208_gca` driver, not an `epdsi`-specific restriction.
+    InvalidPartialWindowAlignment {
+        /// X start coordinate the caller passed to `trigger_partial_refresh`.
+        x: u32,
+        /// Width the caller passed to `trigger_partial_refresh`.
+        width: u32,
+    },
 }
 
 impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RSTE, BUSYE> {
@@ -136,6 +160,9 @@ impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RS
             },
             ValidationError::InvalidLutLength { expected, provided } => {
                 EpdBusError::InvalidLutLength { expected, provided }
+            }
+            ValidationError::InvalidPartialWindowAlignment { x, width } => {
+                EpdBusError::InvalidPartialWindowAlignment { x, width }
             }
         }
     }

@@ -134,6 +134,82 @@ impl Ed2208Controller {
         )
         .await
     }
+
+    /// Refreshes only the given window, instead of [`EpdController::trigger_refresh`]'s
+    /// unconditional full-panel widen.
+    ///
+    /// GxEPD2's narrowed-refresh overload and Good Display's own vendor demo
+    /// (`Display_EPD_W21.cpp::EPD_PartialWindow`) both narrow the refresh to the caller's actual
+    /// window rather than widening it back out; this ports that capability as an explicit opt-in,
+    /// leaving [`EpdController::trigger_refresh`]'s existing full-widen behavior as the
+    /// unconditional default. Call this directly via `EpdDriver::split_mut`:
+    ///
+    /// ```ignore
+    /// let (bus, controller) = driver.split_mut();
+    /// controller.trigger_partial_refresh(bus, &mut delay, x, y, w, h).await?;
+    /// ```
+    ///
+    /// Does not change the VCOM & data interval register (`CDI`): Good Display's own
+    /// `EPD_refresh()` (the single function both its full-panel and partial-window paths call)
+    /// and Zephyr's independent `ed2208_gca` driver both only ever write `CDI = 0x3F`, never
+    /// `0xFF`. GxEPD2's narrowed-refresh overload writes `0xFF` ("border floating"), but it's the
+    /// only one of the three references that does, with no independent hardware corroboration
+    /// found for that byte, so this leaves `CDI` untouched rather than following it.
+    ///
+    /// No speed benefit: real hardware measurement (Zephyr's `ed2208_gca` issue tracker) shows
+    /// full and partial refresh take the same ~35s regardless of window size on this controller.
+    ///
+    /// **The area outside the window visibly fades starting from the very first partial
+    /// refresh, not just after repeated ones.** Bench-confirmed on `GDEP073E01`
+    /// (`epdsi` backlog item `0i`). This is why Zephyr's own `ed2208_gca` driver doesn't expose
+    /// partial refresh at all (`-ENOTSUP` on any non-full-panel write): its issue tracker warned
+    /// of "cumulative fading," but on real hardware the fade starts immediately, it does not
+    /// build up gradually over many calls. Always follow a partial refresh with a prompt full
+    /// [`EpdController::trigger_refresh`] to restore the rest of the panel; do not chain partial
+    /// refreshes back to back expecting the untouched area to hold.
+    ///
+    /// Returns [`EpdBusError::InvalidPartialWindowAlignment`] if `x` or `w` is odd, or either is
+    /// zero: the controller's 4bpp I4 RAM format packs two pixels per byte, so an unaligned
+    /// window would split a byte across the boundary. Returns [`EpdBusError::InvalidWindow`] if
+    /// the window falls outside the panel this controller was constructed for.
+    #[allow(clippy::type_complexity)]
+    pub async fn trigger_partial_refresh<SPI, DC, RST, BUSY, DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+    ) -> Result<(), EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>>
+    where
+        SPI: SpiDevice,
+        DC: OutputPin,
+        RST: OutputPin,
+        BUSY: InputPin + Wait,
+    {
+        if x % 2 != 0 || w % 2 != 0 || w == 0 || h == 0 {
+            return Err(EpdBusError::InvalidPartialWindowAlignment { x, width: w });
+        }
+        let x_end = x + w - 1;
+        let y_end = y + h - 1;
+        if x_end >= self.width || y_end >= self.height {
+            return Err(EpdBusError::InvalidWindow {
+                x_start: x,
+                y_start: y,
+                x_end,
+                y_end,
+                panel_width: self.width,
+                panel_height: self.height,
+            });
+        }
+
+        self.set_partial_ram_area(bus, x, y, w, h).await?;
+        bus.send_command_with_data(cmd::DISPLAY_REFRESH, &[0x00])
+            .await?;
+        delay.delay_ms(1).await;
+        bus.wait_busy_with_delay(delay, false).await
+    }
 }
 
 #[maybe_async_cfg::maybe(

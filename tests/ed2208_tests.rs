@@ -139,3 +139,137 @@ epd_test!(
     test_ed2208_de_ghost_clean_sweeps_then_refreshes,
     ed2208_de_ghost_clean_sweeps_then_refreshes_body
 );
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_trigger_partial_refresh_narrows_without_widening_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .expect("ED2208 init failed");
+
+    let records_before = bus_backend.records.borrow().len();
+    controller
+        .trigger_partial_refresh(&mut bus, &mut delay, 100, 50, 200, 80)
+        .await
+        .expect("trigger_partial_refresh failed");
+
+    let records = bus_backend.records.borrow()[records_before..].to_vec();
+    let coalesced = coalesce(&records);
+    assert_eq!(
+        coalesced,
+        vec![
+            SpiRecord::Command(0x83), // PARTIAL_WINDOW: caller's actual window, not widened
+            SpiRecord::Data(vec![0x00, 100, 0x01, 43, 0x00, 50, 0x00, 130, 0x01]),
+            SpiRecord::Command(0x12), // DISPLAY_REFRESH
+            SpiRecord::Data(vec![0x00]),
+            // No CDI (0x50) write: CDI is left untouched, matching Good Display's own
+            // EPD_refresh() and Zephyr's ed2208_gca driver, neither of which resend it per
+            // refresh with a different byte for a partial update.
+        ]
+    );
+}
+
+epd_test!(
+    test_ed2208_trigger_partial_refresh_narrows_without_widening,
+    ed2208_trigger_partial_refresh_narrows_without_widening_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_trigger_partial_refresh_rejects_odd_alignment_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .expect("ED2208 init failed");
+
+    // Odd x.
+    let err = controller
+        .trigger_partial_refresh(&mut bus, &mut delay, 1, 0, 200, 80)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidPartialWindowAlignment { x: 1, width: 200 }
+    );
+
+    // Odd width.
+    let err = controller
+        .trigger_partial_refresh(&mut bus, &mut delay, 0, 0, 201, 80)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidPartialWindowAlignment { x: 0, width: 201 }
+    );
+
+    // Zero width/height.
+    let err = controller
+        .trigger_partial_refresh(&mut bus, &mut delay, 0, 0, 0, 80)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidPartialWindowAlignment { x: 0, width: 0 }
+    );
+}
+
+epd_test!(
+    test_ed2208_trigger_partial_refresh_rejects_odd_alignment,
+    ed2208_trigger_partial_refresh_rejects_odd_alignment_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_trigger_partial_refresh_rejects_out_of_bounds_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .expect("ED2208 init failed");
+
+    let err = controller
+        .trigger_partial_refresh(&mut bus, &mut delay, 700, 0, 200, 80)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EpdBusError::InvalidWindow {
+            x_start: 700,
+            y_start: 0,
+            x_end: 899,
+            y_end: 79,
+            panel_width: 800,
+            panel_height: 480,
+        }
+    );
+}
+
+epd_test!(
+    test_ed2208_trigger_partial_refresh_rejects_out_of_bounds,
+    ed2208_trigger_partial_refresh_rejects_out_of_bounds_body
+);
