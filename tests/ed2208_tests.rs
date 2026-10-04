@@ -98,3 +98,44 @@ epd_test!(
     test_ed2208_narrowed_window_widens_back_out_on_refresh,
     ed2208_narrowed_window_widens_back_out_on_refresh_body
 );
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_de_ghost_clean_sweeps_then_refreshes_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEP073E01>::new(controller).build(bus);
+
+    driver.init(&mut delay).await.expect("ED2208 init failed");
+
+    let clean_packed = SevenColor::pack(SevenColor::Clean, SevenColor::Clean);
+    assert_eq!(clean_packed, 0x77);
+
+    let records_before = bus_backend.records.borrow().len();
+    driver.de_ghost(&mut delay).await.expect("ED2208 de_ghost failed");
+
+    let records = bus_backend.records.borrow()[records_before..].to_vec();
+    let coalesced = coalesce(&records);
+    assert_eq!(
+        coalesced,
+        vec![
+            SpiRecord::Command(0x10), // DATA_START_TRANSMISSION
+            SpiRecord::Data(vec![clean_packed; 800 * 480 / 2]),
+            SpiRecord::Command(0x83), // PARTIAL_WINDOW, reasserted full-panel bounds
+            SpiRecord::Data(vec![0x00, 0x00, 0x03, 0x1F, 0x00, 0x00, 0x01, 0xE0, 0x01]),
+            SpiRecord::Command(0x12), // DISPLAY_REFRESH
+            SpiRecord::Data(vec![0x00]),
+        ]
+    );
+}
+
+epd_test!(
+    test_ed2208_de_ghost_clean_sweeps_then_refreshes,
+    ed2208_de_ghost_clean_sweeps_then_refreshes_body
+);

@@ -7,7 +7,7 @@ use embedded_hal::delay::DelayNs;
 use embedded_hal_async::delay::DelayNs;
 
 use crate::bus::ValidationError;
-use crate::traits::{ColorChannel, ColorMode, EpdController, EpdPanel};
+use crate::traits::{ColorChannel, ColorMode, EpdController, EpdPanel, SevenColor};
 
 /// Byte count for one packed 2-bits-per-pixel `QuadColor` row, rounded up to the next whole
 /// byte at 4 pixels/byte — see [`EpdPanel::RAM_WIDTH`] for why `ram_width` (not the panel's
@@ -254,6 +254,28 @@ where
         delay: &mut DELAY,
     ) -> Result<(), CONTROLLER::Error> {
         self.controller.trigger_refresh(&mut self.bus, delay).await
+    }
+
+    /// Runs a clean-sweep refresh cycle to counter ACeP/Spectra color ghosting.
+    ///
+    /// Fills the full panel with [`SevenColor::Clean`] in both nibbles and refreshes once.
+    /// 4bpp-per-pixel ACeP/Spectra panels (`ColorMode::SevenColor`, e.g. `GDEP073E01`) can leave a
+    /// faint trace of the outgoing image behind after updating between vibrant colors; running a
+    /// blank pass first clears it. Ported from `Adafruit_ACEP::deGhost()`, which runs this exact
+    /// sequence before every `display()` call rather than leaving it opt-in. Adafruit's version
+    /// hardcodes its own panel's 600x448 buffer size; this one uses `PANEL::WIDTH`/`HEIGHT` via
+    /// [`Self::clear_frame`], so it sizes correctly for whichever `SevenColor` panel is wired in.
+    ///
+    /// Only meaningful for `ColorMode::SevenColor` panels; calling this on a monochrome,
+    /// Tri-Color, or Quad-Color panel clears with a byte pattern that has no meaning for that
+    /// panel's color mode.
+    pub async fn de_ghost<DELAY: DelayNs>(
+        &mut self,
+        delay: &mut DELAY,
+    ) -> Result<(), CONTROLLER::Error> {
+        let clean = SevenColor::pack(SevenColor::Clean, SevenColor::Clean);
+        self.clear_frame(ColorChannel::Color7(0), clean).await?;
+        self.refresh(delay).await
     }
 
     /// Puts controller into sleep state.
