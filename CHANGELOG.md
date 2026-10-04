@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-04
+
+### Added
+
+- `EpdDriver::de_ghost()`: a clean-sweep refresh for ACeP/Spectra (`ColorMode::SevenColor`)
+  panels, countering color ghosting when updating between vibrant images. Ported from
+  `Adafruit_ACEP::deGhost()`, but sizes correctly from `PANEL::WIDTH`/`HEIGHT` instead of
+  hardcoding Adafruit's own panel's buffer size. **Bench-confirmed** on `GDEP073E01`.
+- `Ed2208Controller::trigger_partial_refresh()`: refreshes only a caller-given window instead of
+  `trigger_refresh`'s unconditional full-panel widen, matching GxEPD2's narrowed-refresh overload
+  and Good Display's own vendor demo. **Bench-confirmed real limitation**: the area outside the
+  window visibly fades starting from the very first partial refresh, not just after repeated
+  ones. That's the same reason Zephyr's independent `ed2208_gca` driver refuses to expose this
+  capability at all. Documented plainly; always follow with a prompt full refresh.
+- `ValidationError`/`EpdBusError::InvalidLutLength`: `with_lut`/`custom_lut` now reject SSD1680/
+  SSD1681 LUTs that aren't exactly 153 bytes, or SSD1677 LUTs that aren't exactly 105 bytes,
+  instead of silently accepting any length.
+- `ValidationError`/`EpdBusError::InvalidPartialWindowAlignment`, returned by
+  `trigger_partial_refresh` for an odd `x`/`width` or zero `width`/`height`. The controller's
+  4bpp I4 RAM format packs two pixels per byte, so an unaligned window would split a byte across
+  the boundary.
+- `GDEM0213B74::GRAY4`: 4-level grayscale support for the 2.13" SSD1680 panel, byte-for-byte
+  identical register bundle to the already-shipped `GDEY0266T90::GRAY4`. **Confirmed on physical
+  hardware** on RP2350 (blocking and async), RP2040, and ESP32-C3.
+
+### Fixed
+
+- `ValidationError`/`EpdBusError::InvalidWindow` now carries the caller's raw
+  `x_start`/`y_start`/`x_end`/`y_end` plus the panel's actual bounds, so which of the four bound
+  checks failed is reconstructible from the error alone, instead of a unit variant with no detail.
+- `Ssd168xController`'s (SSD1680) and `Ssd1677Controller`'s `Partial` refresh mode sent the wrong
+  trigger byte (`0xFC` instead of `0xFF`) and was missing a hard-reset plus border-waveform
+  preamble Good Display's own vendor demo sends, affecting `GDEM0213B74`, `GDEY0266T90`,
+  `GDEY0266Z90` (SSD1680) and `GDEQ0426T82` (SSD1677). **Bench-confirmed** on all four panels; a
+  correctness/parity fix, not a speed fix.
+- `Ssd168xController::sleep()` (shared by SSD1680 and SSD1681) was missing a 100ms settle delay
+  after the deep-sleep command, confirmed against the vendor's own demo for all four SSD168x
+  panels this crate ships. **Bench-confirmed** on `GDEM0154Z90` and `GDEY0266T90`.
+- SSD1677's booster soft-start 5th byte, previously split `0x80`/`0x40` depending on refresh mode
+  for the identical physical panel (`GDEQ0426T82`), unified on `0x40` (the majority across
+  independent sources). **Bench-confirmed** on `GDEQ0426T82`.
+- `PervasiveBwryController::sleep()`'s `DriverA` path was missing the 5-second delay before
+  re-sending PSR, per `Pervasive_BWRY_Small::COG_stopDCDC()`. **Bench-confirmed** on `E2417QS0A3`.
+
+### Documentation
+
+- Documented `GDEY037T03`'s (UC8253) register-sequence divergence from Adafruit's and Good
+  Display's own reference drivers, and why `epdsi` follows GxEPD2's bench-confirmed byte sequence
+  instead.
+
 ## [0.6.0] - 2026-09-26
 
 ### Added
@@ -586,7 +636,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/melastmohican/epdsi/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/melastmohican/epdsi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/melastmohican/epdsi/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/melastmohican/epdsi/compare/v0.4.1...v0.4.2
