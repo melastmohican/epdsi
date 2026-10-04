@@ -344,3 +344,26 @@ epd_test!(
     test_ssd1681_builders_are_independent,
     ssd1681_builders_are_independent_body
 );
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1681_sleep_has_100ms_settle_delay_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1681Controller::new(GDEM0154Z90::WIDTH, GDEM0154Z90::HEIGHT);
+    let mut delay = RecordingDelay::new();
+
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
+    assert_eq!(
+        bus_backend.records.borrow().clone(),
+        vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x01])]
+    );
+    assert_eq!(delay.calls_ms, vec![100]);
+}
+epd_test!(
+    test_ssd1681_sleep_has_100ms_settle_delay,
+    ssd1681_sleep_has_100ms_settle_delay_body
+);

@@ -1003,9 +1003,15 @@ where
     async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::DEEP_SLEEP_MODE, &[0x01])
-            .await
+            .await?;
+        // Good Display's own vendor demo sends a 100ms settle delay after this write, confirmed
+        // identically across all four SSD168x panels this crate ships: `GDEM0154Z90`
+        // (`EPD_DeepSleep()`, SSD1681) and `GDEY0266Z90`/`GDEY0266T90`/`GDEM0213B74` (same
+        // function name, SSD1680). `epdsi` previously dropped it.
+        delay.delay_ms(100).await;
+        Ok(())
     }
 }

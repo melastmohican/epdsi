@@ -570,6 +570,25 @@ async fn ssd1680_sleep_body() {
 }
 epd_test!(test_ssd1680_sleep, ssd1680_sleep_body);
 
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ssd1680_sleep_has_100ms_settle_delay_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller = Ssd1680Controller::new(GDEM0213B74::WIDTH, GDEM0213B74::HEIGHT);
+    let mut delay = RecordingDelay::new();
+
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
+    assert_eq!(delay.calls_ms, vec![100]);
+}
+epd_test!(
+    test_ssd1680_sleep_has_100ms_settle_delay,
+    ssd1680_sleep_has_100ms_settle_delay_body
+);
+
 // --- `EpdDriver::display_frame` parity with write_frame + refresh (plan item 3b) -------------
 //
 // One monochrome panel and one Tri-Color panel, both on the shared `Ssd1680Controller`, proving
