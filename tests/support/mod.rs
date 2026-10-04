@@ -208,6 +208,33 @@ impl DelayNs for DummyDelay {
     async fn delay_ms(&mut self, _ms: u32) {}
 }
 
+/// Like `DummyDelay`, but records every `delay_ms` call's argument in order, in milliseconds.
+/// `RecordingSpiBus`-style tests assert the command/data sequence, which says nothing about
+/// inter-command timing; this is for the narrower set of tests that specifically need to assert
+/// a delay actually happened, not just that the bytes around it are correct.
+#[derive(Debug, Default)]
+pub struct RecordingDelay {
+    pub calls_ms: Vec<u32>,
+}
+
+impl RecordingDelay {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl DelayNs for RecordingDelay {
+    async fn delay_ns(&mut self, _ns: u32) {}
+    async fn delay_us(&mut self, _us: u32) {}
+    async fn delay_ms(&mut self, ms: u32) {
+        self.calls_ms.push(ms);
+    }
+}
+
 /// Flattens the 64-byte chunks `send_data_repeated` streams into one contiguous `Vec<u8>`, so a
 /// full-plane assertion can compare against one expected buffer instead of ~750 individual
 /// `SpiRecord::Data` chunks.

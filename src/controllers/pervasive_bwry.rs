@@ -407,8 +407,12 @@ where
         bus.send_command_with_data(cmd::POWER_OFF, &[0x00]).await?;
         bus.wait_busy_with_delay(delay, false).await?;
         // DriverF has no additional shutdown command (falls to the reference's `default:` case);
-        // DriverA re-sends the PSR from OTP-derived data before the long power-down delay.
+        // DriverA re-sends the PSR from OTP-derived data before the long power-down delay. The
+        // leading 5-second delay matches `Pervasive_BWRY_Small::COG_stopDCDC()`'s
+        // `eScreen_EPD_417_QS_0A` case exactly; omitting it was a real gap, not a rounding
+        // choice, confirmed directly against that C++ source rather than assumed.
         if self.variant == PervasiveBwryVariant::DriverA {
+            delay.delay_ms(5000).await;
             bus.send_command_with_data(cmd::PSR, &self.otp_data[26..28])
                 .await?;
             delay.delay_ms(100).await;

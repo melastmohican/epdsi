@@ -686,3 +686,33 @@ epd_test!(
     test_pervasive_bwry_trigger_refresh_and_sleep,
     pervasive_bwry_trigger_refresh_and_sleep_body
 );
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn pervasive_bwry_driver_a_sleep_has_5s_delay_before_psr_resend_body() {
+    // `RecordingSpiBus`-style assertions only cover command/data bytes, not inter-command
+    // timing, so they can't catch a missing delay on their own; this is specifically a delay
+    // assertion. Matches `Pervasive_BWRY_Small::COG_stopDCDC()`'s `eScreen_EPD_417_QS_0A` case:
+    // a 5000ms delay before the PSR re-send, then a 100ms delay after.
+    // `FixedPin(true)`, not `DummyPin`, for BUSY: `sleep()`'s `busy_active_high: false` means
+    // "busy while LOW," so a pin fixed HIGH reads idle on the very first poll. `DummyPin` always
+    // reads LOW here, which would never satisfy that and would spin `wait_busy_with_delay`'s
+    // blocking-mode retry loop up to 60,000 times, each iteration recording its own 1ms delay
+    // and burying the assertion below in noise.
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut delay = RecordingDelay::new();
+
+    let mut controller = PervasiveBwryController::new(E2417QS0A3::WIDTH, E2417QS0A3::HEIGHT)
+        .with_variant(PervasiveBwryVariant::DriverA);
+    controller.sleep(&mut bus, &mut delay).await.unwrap();
+
+    assert_eq!(delay.calls_ms, vec![5000, 100]);
+}
+epd_test!(
+    test_pervasive_bwry_driver_a_sleep_has_5s_delay_before_psr_resend,
+    pervasive_bwry_driver_a_sleep_has_5s_delay_before_psr_resend_body
+);
