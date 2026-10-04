@@ -339,6 +339,73 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn ssd1680_gdem0213b74_gray4_init_sequence_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, DummyPin);
+    let mut controller =
+        Ssd1680Controller::for_panel::<GDEM0213B74>().with_gray4(GDEM0213B74::GRAY4);
+    let mut delay = DummyDelay;
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    let gray4 = GDEM0213B74::GRAY4.unwrap();
+    assert_eq!(gray4.lut.len(), 233);
+    // Byte-identical to GDEY0266T90's bundle: both come from the same Adafruit reference family
+    // for this IC, confirmed by direct comparison against Adafruit's source, not assumed.
+    assert_eq!(gray4.lut, GDEY0266T90::GRAY4.unwrap().lut);
+
+    // Same analog/waveform block as GDEY0266T90's Gray4 path (border/gate/source/lut-end/vcom/
+    // LUT), pinned directly against Adafruit_EPD's `ti_213mfgn_gray4_init_code`. Only the
+    // driver-control/window/cursor bytes differ, reflecting this panel's own 122x250 dimensions.
+    assert_eq!(
+        records,
+        vec![
+            SpiRecord::Command(0x12),                // SW_RESET
+            SpiRecord::Command(0x01),                 // DRIVER_CONTROL
+            SpiRecord::Data(vec![0xF9, 0x00, 0x00]), // 250-1 = 249 = 0x00F9
+            SpiRecord::Command(0x3C),                 // BORDER_WAVEFORM_CONTROL
+            SpiRecord::Data(vec![0x04]),
+            SpiRecord::Command(0x03), // GATE_VOLTAGE
+            SpiRecord::Data(vec![0x17]),
+            SpiRecord::Command(0x04), // SOURCE_VOLTAGE
+            SpiRecord::Data(vec![0x41, 0xAE, 0x32]),
+            SpiRecord::Command(0x3F), // LUT_END_OPTION
+            SpiRecord::Data(vec![0x22]),
+            SpiRecord::Command(0x2C), // WRITE_VCOM_REGISTER
+            SpiRecord::Data(vec![0x28]),
+            SpiRecord::Command(0x32), // WRITE_LUT_REGISTER
+            SpiRecord::Data(gray4.lut.to_vec()),
+            SpiRecord::Command(0x21), // DISPLAY_UPDATE_CTRL1
+            SpiRecord::Data(vec![0x00, 0x80]),
+            SpiRecord::Command(0x18), // TEMP_CONTROL
+            SpiRecord::Data(vec![0x80]),
+            SpiRecord::Command(0x11), // DATA_ENTRY_MODE
+            SpiRecord::Data(vec![0x03]),
+            SpiRecord::Command(0x44),          // SET_RAMXPOS
+            SpiRecord::Data(vec![0x00, 0x0F]), // (122-1)/8 = 15 = 0x0F
+            SpiRecord::Command(0x45),          // SET_RAMYPOS
+            SpiRecord::Data(vec![0x00, 0x00, 0xF9, 0x00]), // 249 = 0xF9
+            SpiRecord::Command(0x4E),          // SET_RAMXCNT
+            SpiRecord::Data(vec![0x00]),
+            SpiRecord::Command(0x4F), // SET_RAMYCNT
+            SpiRecord::Data(vec![0x00, 0x00]),
+        ]
+    );
+}
+epd_test!(
+    test_ssd1680_gdem0213b74_gray4_init_sequence,
+    ssd1680_gdem0213b74_gray4_init_sequence_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn ssd1680_gdey0266z90_clear_frame_plane_polarity_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
