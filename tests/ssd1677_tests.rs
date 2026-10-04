@@ -38,7 +38,7 @@ async fn ssd1677_init_sequence_body() {
             SpiRecord::Command(0x18), // TEMP_CONTROL
             SpiRecord::Data(vec![0x80]),
             SpiRecord::Command(0x0C), // BOOSTER_SOFT_START
-            SpiRecord::Data(vec![0xAE, 0xC7, 0xC3, 0xC0, 0x80]),
+            SpiRecord::Data(vec![0xAE, 0xC7, 0xC3, 0xC0, 0x40]),
             SpiRecord::Command(0x01), // DRIVER_CONTROL
             SpiRecord::Data(vec![0xDF, 0x01, 0x02]),
             SpiRecord::Command(0x3C), // BORDER_WAVEFORM_CONTROL
@@ -666,9 +666,9 @@ async fn ssd1677_gray4_init_sequence_body() {
 
     // Gray4's analog/waveform block (LUT + gate/source/VCOM voltages) entirely replaces the
     // plain path's VCOM/gate-voltage hook and custom-LUT tail, matching
-    // `Adafruit_SSD1677::powerUp()`'s unconditional `_epd_init_code` + `_epd_lut_code` load. Note
-    // the booster soft-start's last byte (0x40, not the plain path's 0x80) — ported directly from
-    // `ti_426_gray4_init_code`, the crate's only Gray4 reference for this controller.
+    // `Adafruit_SSD1677::powerUp()`'s unconditional `_epd_init_code` + `_epd_lut_code` load. The
+    // booster soft-start's last byte is 0x40 here, same as the plain path now (see that path's
+    // `init_sequence` doc comment for why both were unified onto this byte).
     assert_eq!(
         records,
         vec![

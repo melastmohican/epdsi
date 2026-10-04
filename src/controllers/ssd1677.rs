@@ -382,16 +382,21 @@ where
         bus.send_command_with_data(cmd::TEMP_CONTROL, &[0x80])
             .await?;
 
-        // Booster Soft-Start Control (wider payload than SSD1680/SSD1681). Gray4 mode uses a
-        // different last byte (0x40 vs 0x80) — ported from `ti_426_gray4_init_code`, this
-        // controller's only Gray4 reference; the plain path's 0x80 is unrelated GxEPD2 material
-        // and stays as-is.
-        let booster_last_byte = if self.gray4.is_some() { 0x40 } else { 0x80 };
-        bus.send_command_with_data(
-            cmd::BOOSTER_SOFT_START,
-            &[0xAE, 0xC7, 0xC3, 0xC0, booster_last_byte],
-        )
-        .await?;
+        // Booster Soft-Start Control (wider payload than SSD1680/SSD1681). The datasheet (Rev
+        // 1.0, Nov 2018, p.24, command 0x0C) names the last byte's two values as "Level 1"
+        // (0x40) and "Level 2" (0x80): both are legitimate, selectable inrush-current strengths,
+        // not a correctness question. Which one suits a given board depends on its external
+        // booster circuit, something no public source settles for this exact panel. Decided on
+        // 0x40 for both the plain-mono and Gray4 paths (unifying what was previously two
+        // different bytes on the same physical panel depending only on refresh mode): Adafruit's
+        // own board (both its C++ and independent CircuitPython drivers), MoveCall's OnePage
+        // reader, and the `xteink-display` Rust crate for a different SSD1677 board all agree on
+        // 0x40, against GxEPD2/GxEPD2_4G and Good Display's own mono-only demo on 0x80. A
+        // MicroPython driver for that same Xteink board uses 0x80 with no apparent ill effect,
+        // the clearest sign this register tolerates either value. See `.agents/notes/backlog.md`
+        // item 0d for the full source-by-source tally.
+        bus.send_command_with_data(cmd::BOOSTER_SOFT_START, &[0xAE, 0xC7, 0xC3, 0xC0, 0x40])
+            .await?;
 
         // Driver output control: setting display height
         let h_low = ((self.height - 1) & 0xFF) as u8;
