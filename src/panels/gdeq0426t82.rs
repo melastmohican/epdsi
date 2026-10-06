@@ -2,7 +2,10 @@
 //!
 //! ### Hardware Notes:
 //! - **Seeed Hardware**: Seeed Studio Product 6398 (4.26" Monochrome SPI ePaper Display)
-//! - **Controller IC**: SE8350 / SSD1677
+//! - **Controller IC**: SE8350 / SSD1677. "SE8350" is the part number in the panel maker's
+//!   datasheet (YES-0347-Y03, hosted by Seeed) and on Seeed's product page, which lists it as
+//!   `SE8350 (SSD1677)`. The SE8350 IC spec itself is not public, so the SSD1677 command set is
+//!   what this crate drives, verified on hardware.
 //! - **Native Resolution**: 800 x 480 pixels (already byte-aligned, no RAM padding)
 //! - **Y-Axis Reversal**: panel gates are physically wired in reverse; `Ssd1677Controller`
 //!   compensates for this in software (see its `set_window`/`set_cursor` implementation), so
