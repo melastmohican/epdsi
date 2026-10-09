@@ -328,10 +328,16 @@ where
     async fn sleep<DELAY: DelayNs>(
         &mut self,
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
-        _delay: &mut DELAY,
+        delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
         bus.send_command_with_data(cmd::POWER_OFF, &[0x00]).await?;
         bus.wait_busy(false).await?;
+        // Good Display's `GDEY0213F51` demo (`EPD_sleep()`) waits 100 ms between POWER_OFF and
+        // DEEP_SLEEP and marks it "necessary, 100mS at least". The JD79660 demo
+        // (`GDEM0154F51H`) has no such delay, so only JD79661 gets it.
+        if self.variant == Jd7966xVariant::Jd79661 {
+            delay.delay_ms(100).await;
+        }
         bus.send_command_with_data(cmd::DEEP_SLEEP, &[0xA5]).await
     }
 }

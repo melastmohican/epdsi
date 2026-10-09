@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Jd79661Controller::sleep()` now waits 100 ms between `POWER_OFF` and `DEEP_SLEEP`, as Good
+  Display's `GDEY0213F51` demo does ("necessary, 100mS at least"). `Jd79660Controller` is
+  unchanged, since its vendor demo has no such delay.
+
 ## [0.6.1] - 2026-10-04
 
 ### Added

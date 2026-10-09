@@ -167,9 +167,13 @@ async fn jd79660_sleep_body() {
     let dc = TestDc(&bus_backend);
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
     let mut controller = Jd79660Controller::new(GDEM0154F51H::WIDTH, GDEM0154F51H::HEIGHT);
-    let mut delay = DummyDelay;
+    let mut delay = RecordingDelay::new();
 
     controller.sleep(&mut bus, &mut delay).await.unwrap();
+
+    // The `GDEM0154F51H` demo and `GxEPD2_154c_GDEM0154F51H::hibernate()` have no settle delay,
+    // unlike the JD79661 demo.
+    assert!(delay.calls_ms.is_empty());
 
     assert_eq!(
         bus_backend.records.borrow().clone(),

@@ -185,9 +185,13 @@ async fn jd79661_sleep_body() {
     let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
     let mut controller =
         Jd79661Controller::new(ZJY122250_0213AJH_E5::WIDTH, ZJY122250_0213AJH_E5::HEIGHT);
-    let mut delay = DummyDelay;
+    let mut delay = RecordingDelay::new();
 
     controller.sleep(&mut bus, &mut delay).await.unwrap();
+
+    // Good Display's `GDEY0213F51` demo waits 100 ms between POWER_OFF and DEEP_SLEEP ("necessary,
+    // 100mS at least"). Seeed's `Driver_JD79676::sleep()` does the same.
+    assert_eq!(delay.calls_ms, vec![100]);
 
     // Bug fix, corroborated the same way as `trigger_refresh` above (R02H: "1 data byte,
     // default 00h"). Used to be a bare `Command(0x02)`.
