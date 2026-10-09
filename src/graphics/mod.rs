@@ -1,6 +1,9 @@
 //! Graphics and paged rendering framework module.
 
 pub mod buffer;
+#[cfg(feature = "graphics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
+pub mod dither;
 pub mod paged;
 
 pub use buffer::{

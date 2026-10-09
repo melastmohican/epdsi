@@ -497,3 +497,202 @@ mod gray_buffer_pair {
         assert_eq!(bb.size, Size::new(32, 4));
     }
 }
+
+// --- Bayer ordered dithering (backlog 1a) ---------------------------------------------------
+
+mod dithering {
+    use embedded_graphics_core::pixelcolor::{BinaryColor, Rgb888, RgbColor};
+    use epdsi::graphics::dither::{dither_binary, dither_gray4, dither_seven, dither_tri};
+    use epdsi::prelude::*;
+
+    /// Every `(x, y)` position inside one 4x4 Bayer tile.
+    fn tile() -> impl Iterator<Item = (u32, u32)> {
+        (0..4u32).flat_map(|y| (0..4u32).map(move |x| (x, y)))
+    }
+
+    fn gray(v: u8) -> Rgb888 {
+        Rgb888::new(v, v, v)
+    }
+
+    fn black_count(v: u8) -> usize {
+        tile()
+            .filter(|&(x, y)| dither_binary(x, y, gray(v)) == BinaryColor::On)
+            .count()
+    }
+
+    #[test]
+    fn binary_extremes_are_flat() {
+        assert_eq!(black_count(0), 16);
+        assert_eq!(black_count(255), 0);
+    }
+
+    #[test]
+    fn binary_gradient_is_monotonic_and_mid_gray_is_half_black() {
+        assert_eq!(black_count(128), 8);
+        let mut prev = black_count(0);
+        for v in 1..=255u8 {
+            let n = black_count(v);
+            assert!(n <= prev, "black count rose from {prev} to {n} at gray {v}");
+            prev = n;
+        }
+    }
+
+    #[test]
+    fn binary_pattern_repeats_every_four_pixels() {
+        for (x, y) in tile() {
+            assert_eq!(
+                dither_binary(x, y, gray(90)),
+                dither_binary(x + 4, y + 8, gray(90))
+            );
+        }
+    }
+
+    fn gray4_level(c: Gray4Color) -> u32 {
+        match c {
+            Gray4Color::Black => 0,
+            Gray4Color::Dark => 1,
+            Gray4Color::Light => 2,
+            Gray4Color::White => 3,
+        }
+    }
+
+    #[test]
+    fn gray4_extremes_and_exact_levels_are_flat() {
+        for (x, y) in tile() {
+            assert_eq!(dither_gray4(x, y, gray(0)), Gray4Color::Black);
+            assert_eq!(dither_gray4(x, y, gray(85)), Gray4Color::Dark);
+            assert_eq!(dither_gray4(x, y, gray(170)), Gray4Color::Light);
+            assert_eq!(dither_gray4(x, y, gray(255)), Gray4Color::White);
+        }
+    }
+
+    #[test]
+    fn gray4_only_mixes_the_two_adjacent_levels() {
+        for v in 0..=255u8 {
+            let levels: Vec<u32> = tile()
+                .map(|(x, y)| gray4_level(dither_gray4(x, y, gray(v))))
+                .collect();
+            let lo = *levels.iter().min().unwrap();
+            let hi = *levels.iter().max().unwrap();
+            assert!(hi - lo <= 1, "gray {v} mixed levels {lo} and {hi}");
+        }
+    }
+
+    #[test]
+    fn gray4_mean_level_follows_the_input() {
+        let mean = |v: u8| -> u32 {
+            tile()
+                .map(|(x, y)| gray4_level(dither_gray4(x, y, gray(v))))
+                .sum()
+        };
+        let mut prev = mean(0);
+        for v in 1..=255u8 {
+            let m = mean(v);
+            assert!(m >= prev, "mean level fell at gray {v}");
+            prev = m;
+        }
+    }
+
+    #[test]
+    fn tri_maps_palette_colors_exactly() {
+        for (x, y) in tile() {
+            assert_eq!(
+                dither_tri(x, y, Rgb888::BLACK, Rgb888::RED),
+                TriColor::Black
+            );
+            assert_eq!(
+                dither_tri(x, y, Rgb888::WHITE, Rgb888::RED),
+                TriColor::White
+            );
+            assert_eq!(dither_tri(x, y, Rgb888::RED, Rgb888::RED), TriColor::Accent);
+            assert_eq!(
+                dither_tri(x, y, Rgb888::YELLOW, Rgb888::YELLOW),
+                TriColor::Accent
+            );
+        }
+    }
+
+    #[test]
+    fn tri_gray_ramp_never_uses_the_accent() {
+        for v in 0..=255u8 {
+            for (x, y) in tile() {
+                assert_ne!(
+                    dither_tri(x, y, gray(v), Rgb888::RED),
+                    TriColor::Accent,
+                    "gray {v} at ({x},{y}) picked the accent ink"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn seven_maps_palette_colors_exactly() {
+        let cases = [
+            (Rgb888::BLACK, SevenColor::Black),
+            (Rgb888::WHITE, SevenColor::White),
+            (Rgb888::YELLOW, SevenColor::Yellow),
+            (Rgb888::RED, SevenColor::Red),
+            (Rgb888::BLUE, SevenColor::Blue),
+            (Rgb888::GREEN, SevenColor::Green),
+        ];
+        for (rgb, want) in cases {
+            for (x, y) in tile() {
+                assert_eq!(dither_seven(x, y, rgb), want);
+            }
+        }
+    }
+
+    #[test]
+    fn seven_never_returns_orange_or_clean() {
+        for r in (0..=255u8).step_by(15) {
+            for g in (0..=255u8).step_by(15) {
+                for b in (0..=255u8).step_by(15) {
+                    for (x, y) in tile() {
+                        let c = dither_seven(x, y, Rgb888::new(r, g, b));
+                        assert!(
+                            !matches!(c, SevenColor::Orange | SevenColor::Clean),
+                            "({r},{g},{b}) at ({x},{y}) gave {c:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A paged sweep must produce the same bytes as drawing the whole frame at once, because the
+    /// dither depends only on the absolute `(x, y)` the caller draws at.
+    #[test]
+    fn paged_rendering_matches_full_frame_rendering() {
+        const W: u32 = 122;
+        const H: u32 = 20;
+        const STRIDE: usize = 16;
+
+        let source = |x: u32, y: u32| gray(((x * 2 + y * 9) % 256) as u8);
+
+        let mut full = [0xFFu8; STRIDE * H as usize];
+        {
+            let mut buf = PageBuffer::new(&mut full, W, H, 0);
+            for y in 0..H {
+                for x in 0..W {
+                    let black = dither_binary(x, y, source(x, y)) == BinaryColor::On;
+                    buf.set_pixel(x, y, black);
+                }
+            }
+        }
+
+        let mut paged = [0xFFu8; STRIDE * H as usize];
+        for (page, rows) in paged.chunks_mut(STRIDE * 8).enumerate() {
+            let y_start = page as u32 * 8;
+            let page_h = (rows.len() / STRIDE) as u32;
+            let mut buf = PageBuffer::new(rows, W, page_h, y_start);
+            for y in y_start..y_start + page_h {
+                for x in 0..W {
+                    let black = dither_binary(x, y, source(x, y)) == BinaryColor::On;
+                    buf.set_pixel(x, y, black);
+                }
+            }
+        }
+
+        assert_eq!(full, paged);
+    }
+}

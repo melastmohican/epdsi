@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `graphics::dither`: zero-heap Bayer ordered dithering from `Rgb888` to `BinaryColor`
+  (`dither_binary`), `Gray4Color` (`dither_gray4`), `TriColor` (`dither_tri`, caller supplies the
+  accent ink) and the six Spectra 6 colors (`dither_seven`). Stateless per-pixel functions, so
+  they work inside a `render_paged` closure with no line buffer. `dither_seven` uses ideal
+  primaries, not measured ink colors. Error diffusion is not included.
+
 ### Fixed
 
 - `Jd79661Controller::sleep()` now waits 100 ms between `POWER_OFF` and `DEEP_SLEEP`, as Good

@@ -130,6 +130,10 @@
 //! single-pass `render_paged_gray4` cannot express, so this is a dedicated function rather than a
 //! generic one.
 //!
+//! [`graphics::dither`] turns `Rgb888` pixels into the palette a panel can show with Bayer
+//! ordered dithering. The functions are stateless per-pixel calls, so they need no extra buffer
+//! inside a paged closure.
+//!
 //! # Colour panels refresh slowly, and that is physics
 //!
 //! Tri-Color and Quad-Color panels have no fast differential waveform. The coloured
