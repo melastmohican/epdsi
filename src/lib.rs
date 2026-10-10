@@ -39,6 +39,7 @@
 //! | [`Ssd1681Controller`] | [`GDEM0154Z90`] | 200 × 200 | Tri-Color |
 //! | [`Ssd1680Controller`] | [`GDEM0213B74`], [`GDEY0266Z90`], [`GDEY0266T90`] | 122 × 250, 152 × 296, 152 × 296 | Monochrome, Tri-Color |
 //! | [`Jd79661Controller`] | [`ZJY122250_0213AJH_E5`] / [`GDEY0213F51`] | 122 × 250 | Quad-Color |
+//! | [`Jd79676Controller`] | [`GDEY0213F52`] | 122 × 250 | Quad-Color |
 //! | [`Jd79660Controller`] | [`GDEM0154F51H`] / [`GxEPD2_154c_GDEM0154F51H`] | 200 × 200 | Quad-Color |
 //! | [`Uc8253Controller`] | [`GDEY037T03`], [`SE0352N14TNGA0`] | 240 × 416, 240 × 360 | Monochrome, Tri-Color |
 //! | [`Ssd1677Controller`] | [`GDEQ0426T82`] | 800 × 480 | Monochrome |
@@ -47,8 +48,8 @@
 //! | [`PervasiveBwryController`] | [`E2154QS0F1`], [`E2417QS0A3`] | 152 × 152, 400 × 300 | Quad-Color (Spectra-4) |
 //!
 //! [`Ssd1680Controller`] and [`Ssd1681Controller`] are thin wrappers over the shared
-//! [`Ssd168xController`], and [`Jd79660Controller`]/[`Jd79661Controller`] are the same
-//! relationship over [`Jd7966xController`] — both JD ICs share one SPI register table, differing
+//! [`Ssd168xController`], and [`Jd79660Controller`]/[`Jd79661Controller`]/[`Jd79676Controller`]
+//! are the same relationship over [`Jd7966xController`] — the JD ICs share one SPI register table, differing
 //! only in which registers `Jd7966xVariant` selects at init. [`Uc8253Controller`] carries two
 //! panel register profiles selected by
 //! `Uc8253Variant`, since the two UC8253 panels disagree on init, RAM plane order and refresh —
@@ -199,6 +200,7 @@
 //! [`Jd7966xController`]: controllers::Jd7966xController
 //! [`Jd79660Controller`]: controllers::Jd79660Controller
 //! [`Jd79661Controller`]: controllers::Jd79661Controller
+//! [`Jd79676Controller`]: controllers::Jd79676Controller
 //! [`Ed2208Controller`]: controllers::Ed2208Controller
 //! [`PervasiveBwController`]: controllers::PervasiveBwController
 //! [`PervasiveBwryController`]: controllers::PervasiveBwryController
@@ -208,6 +210,7 @@
 //! [`GDEY0266T90`]: panels::GDEY0266T90
 //! [`ZJY122250_0213AJH_E5`]: panels::ZJY122250_0213AJH_E5
 //! [`GDEY0213F51`]: panels::GDEY0213F51
+//! [`GDEY0213F52`]: panels::GDEY0213F52
 //! [`GDEM0154F51H`]: panels::GDEM0154F51H
 //! [`GxEPD2_154c_GDEM0154F51H`]: panels::GxEPD2_154c_GDEM0154F51H
 //! [`GDEY037T03`]: panels::GDEY037T03

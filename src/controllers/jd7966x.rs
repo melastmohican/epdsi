@@ -1,4 +1,4 @@
-//! JD7966x (JD79660AA & JD79661AA) E-Paper Display Controller implementation.
+//! JD7966x (JD79660AA, JD79661AA & JD79676AA) E-Paper Display Controller implementation.
 //!
 //! Both ICs share an identical SPI command-register table (confirmed against the JD79660A
 //! v1.0.3 and JD79661AA v1.0.4 datasheets directly — same addresses, bit fields, and lengths
@@ -16,6 +16,11 @@
 //! own `Adafruit_JD79661.cpp` (`update()`/`powerDown()`) sends it explicitly. Both commands used
 //! to be sent bare on the JD79661 side of this file — a latent bug caught only by reading the
 //! datasheet directly, not by the vendor C++ references agreeing with each other.
+//!
+//! [`Jd7966xVariant::Jd79676`] (JD79676AA, `GDEY0213F52`) shares the same register table as far
+//! as the JD79676AA v1.0.4 datasheet shows, but Good Display's demo does not program it: init is
+//! `0xE9 0x01` then `PON`, and the IC runs from OTP. Its PSR `RES` bits encode 128x250 as `00`,
+//! where JD79661AA uses `10`, so a JD79661 init sequence must not be reused for it.
 //!
 //! `0x4D`, `0xE7`, `0xE3`, `0xB4` and `0xB5` are vendor registers **not documented in either
 //! public datasheet** — the same class of undocumented-but-real register as the SSD1680 `0x3F`
@@ -91,6 +96,10 @@ pub enum Jd7966xVariant {
     Jd79660,
     /// JD79661AA — drives `ZJY122250_0213AJH_E5` / `GDEY0213F51`.
     Jd79661,
+    /// JD79676AA — drives `GDEY0213F52`. Good Display's demo runs the IC from its OTP
+    /// settings, so init is only `0xE9 0x01` and `PON`: no PSR, PWR, BTST, CDI, TCON or TRES.
+    /// Do not pair it with a JD79661 panel: the OTP defaults do not match.
+    Jd79676,
 }
 
 /// Generic JD7966x (JD79660AA / JD79661AA) Controller IC driver implementation.
@@ -113,6 +122,12 @@ pub struct Jd79661Controller {
     inner: Jd7966xController,
 }
 
+/// Dedicated controller for the JD79676AA IC (`GDEY0213F52`).
+#[derive(Debug, Clone, Copy)]
+pub struct Jd79676Controller {
+    inner: Jd7966xController,
+}
+
 impl Jd79660Controller {
     /// Creates a new JD79660AA controller instance configured for target display dimensions.
     pub fn new(width: u32, height: u32) -> Self {
@@ -127,6 +142,15 @@ impl Jd79661Controller {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             inner: Jd7966xController::new_jd79661(width, height),
+        }
+    }
+}
+
+impl Jd79676Controller {
+    /// Creates a new JD79676AA controller instance configured for target display dimensions.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            inner: Jd7966xController::new_jd79676(width, height),
         }
     }
 }
@@ -147,6 +171,15 @@ impl Jd7966xController {
             width,
             height,
             variant: Jd7966xVariant::Jd79661,
+        }
+    }
+
+    /// Creates a new JD79676AA controller instance configured for target display dimensions.
+    pub fn new_jd79676(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            variant: Jd7966xVariant::Jd79676,
         }
     }
 
@@ -178,8 +211,16 @@ where
         bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
         delay: &mut DELAY,
     ) -> Result<(), Self::Error> {
-        // Hardware reset sequence. Busy is active-low on both variants: busy when LOW.
-        bus.hard_reset(delay, 10).await?;
+        // Hardware reset sequence. Busy is active-low on all variants: busy when LOW.
+        if self.variant == Jd7966xVariant::Jd79676 {
+            // Good Display's `GDEY0213F52` demo (`EPD_init()`): at least 20 ms before reset, at
+            // least 40 ms low and at least 50 ms high. `hard_reset` uses one duration for both
+            // phases, so 50 ms covers both minimums.
+            delay.delay_ms(20).await;
+            bus.hard_reset(delay, 50).await?;
+        } else {
+            bus.hard_reset(delay, 10).await?;
+        }
         bus.wait_busy(false).await?;
 
         match self.variant {
@@ -264,6 +305,12 @@ where
                 bus.send_command_with_data(cmd::PLL_CONTROL, &[0x08])
                     .await?;
             }
+            Jd7966xVariant::Jd79676 => {
+                // Panel, power, booster, CDI and resolution all come from OTP (datasheet default
+                // RES is 128x250). `0xE9` is undocumented in the public datasheet and is the
+                // only register the vendor demo writes before PON.
+                bus.send_command_with_data(0xE9, &[0x01]).await?;
+            }
         }
 
         // Power ON and wait until ready
@@ -334,7 +381,7 @@ where
         bus.wait_busy(false).await?;
         // Good Display's `GDEY0213F51` demo (`EPD_sleep()`) waits 100 ms between POWER_OFF and
         // DEEP_SLEEP and marks it "necessary, 100mS at least". The JD79660 demo
-        // (`GDEM0154F51H`) has no such delay, so only JD79661 gets it.
+        // (`GDEM0154F51H`) and the `GDEY0213F52` demo have no such delay, so only JD79661 gets it.
         if self.variant == Jd7966xVariant::Jd79661 {
             delay.delay_ms(100).await;
         }
@@ -428,6 +475,87 @@ where
     async(not(feature = "blocking"), keep_self)
 )]
 impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Jd79661Controller
+where
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin + Wait,
+{
+    type Error = EpdBusError<SPI::Error, DC::Error, RST::Error, BUSY::Error>;
+
+    async fn init_sequence<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.init_sequence(bus, delay).await
+    }
+
+    async fn set_window(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x_start: u32,
+        y_start: u32,
+        x_end: u32,
+        y_end: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner
+            .set_window(bus, x_start, y_start, x_end, y_end)
+            .await
+    }
+
+    async fn set_cursor(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        x: u32,
+        y: u32,
+    ) -> Result<(), Self::Error> {
+        self.inner.set_cursor(bus, x, y).await
+    }
+
+    async fn write_frame(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        self.inner.write_frame(bus, channel, data).await
+    }
+
+    async fn write_frame_pattern(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        channel: ColorChannel,
+        byte: u8,
+        count: usize,
+    ) -> Result<(), Self::Error> {
+        self.inner
+            .write_frame_pattern(bus, channel, byte, count)
+            .await
+    }
+
+    async fn trigger_refresh<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.trigger_refresh(bus, delay).await
+    }
+
+    async fn sleep<DELAY: DelayNs>(
+        &mut self,
+        bus: &mut SpiBusWrapper<SPI, DC, RST, BUSY>,
+        delay: &mut DELAY,
+    ) -> Result<(), Self::Error> {
+        self.inner.sleep(bus, delay).await
+    }
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+impl<SPI, DC, RST, BUSY> EpdController<SpiBusWrapper<SPI, DC, RST, BUSY>> for Jd79676Controller
 where
     SPI: SpiDevice,
     DC: OutputPin,

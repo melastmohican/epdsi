@@ -347,6 +347,47 @@ epd_test!(
     sync(feature = "blocking", keep_self),
     async(not(feature = "blocking"), keep_self)
 )]
+async fn jd79676_epd_driver_instantiation_and_frame_write_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Jd79676Controller::new(GDEY0213F52::WIDTH, GDEY0213F52::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEY0213F52>::new(controller).build(bus);
+
+    assert_eq!(driver.width(), 122);
+    assert_eq!(driver.height(), 250);
+
+    driver
+        .init(&mut delay)
+        .await
+        .expect("Initialization failed");
+
+    // Quad-Color panels pack 2 bits/pixel and aren't wired into the 1bpp `render_paged` sweep
+    // (see `RAM_WIDTH`/`quad_color_row_bytes` in `src/driver.rs`) — drive `clear_frame`/
+    // `write_frame` directly instead, at the panel's real 2bpp RAM size: 128px RAM_WIDTH (this
+    // panel pads 122px to 128px) * 2 bits/pixel / 8 * 250 rows = 8000 bytes.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0xFF)
+        .await
+        .expect("Clear frame failed");
+
+    let frame = [0x55u8; 8000];
+    driver
+        .write_frame(ColorChannel::BlackWhite, &frame)
+        .await
+        .expect("Write frame failed");
+}
+epd_test!(
+    test_jd79676_epd_driver_instantiation_and_frame_write,
+    jd79676_epd_driver_instantiation_and_frame_write_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
 async fn jd79660_epd_driver_instantiation_and_frame_write_body() {
     let bus_backend = RecordingSpiBus::new();
     let dc = TestDc(&bus_backend);
