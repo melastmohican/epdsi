@@ -122,10 +122,49 @@ jobs:
         env:
           MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
           CHANGELOG_BODY: ${{ steps.changelog.outputs.body }}
+          LC_ALL: C.UTF-8
         run: |
+          set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          status="epdsi v${version} released 🎉"$'\n\n'"${CHANGELOG_BODY}"$'\n\n'"https://crates.io/crates/epdsi"
-          curl -sS -X POST "https://fosstodon.org/api/v1/statuses" \
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          crate_url="https://crates.io/crates/epdsi"
+          header="epdsi v${version} released 🎉"
+
+          # First sentence of each changelog bullet (wrapped lines joined), one per line.
+          summary="$(printf '%s\n' "$CHANGELOG_BODY" | awk '
+            /^- /      { if (cur != "") print cur; cur = substr($0, 3); next }
+            /^  /      { if (cur != "") { sub(/^ +/, ""); cur = cur " " $0 } ; next }
+            /^$|^#/    { if (cur != "") print cur; cur = ""; next }
+            END        { if (cur != "") print cur }
+          ' | awk '{ i = index($0, ". "); if (i > 0) $0 = substr($0, 1, i); print "- " $0 }')"
+
+          # Mastodon caps a post at 500 characters and counts each URL as 23, whatever its
+          # length. Keep a margin. Drop whole trailing bullets first; only if a single bullet
+          # is still too long, cut it back to a word boundary rather than mid-word.
+          limit=$(( 490 - ${#header} - 2 * 23 - 8 ))
+          while [ "${#summary}" -gt "$limit" ] && [[ "$summary" == *$'\n'* ]]; do
+            summary="${summary%$'\n'*}"
+          done
+          if [ "${#summary}" -gt "$limit" ]; then
+            summary="${summary:0:$limit}"
+            summary="${summary% *}…"
+          fi
+
+          status="${header}"$'\n\n'
+          if [ -n "$summary" ]; then
+            status="${status}${summary}"$'\n\n'
+          fi
+          status="${status}${release_url}"$'\n'"${crate_url}"
+
+          # curl exits 0 on an HTTP 4xx, so check the status code explicitly; otherwise a
+          # rejected post (as happened with the 500-character limit) still shows as green.
+          code="$(curl -sS -o mastodon.json -w '%{http_code}' -X POST \
+            "https://fosstodon.org/api/v1/statuses" \
             -H "Authorization: Bearer ${MASTODON_ACCESS_TOKEN}" \
             --data-urlencode "status=${status}" \
-            --data-urlencode "visibility=public"
+            --data-urlencode "visibility=public")"
+          if [ "$code" != "200" ]; then
+            echo "::error::Mastodon returned HTTP ${code}: $(cat mastodon.json)"
+            exit 1
+          fi
+          echo "Posted: $(jq -r .url mastodon.json)"
