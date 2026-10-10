@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-09
+
+### Added
+
+- `Jd79676Controller` and `Jd7966xVariant::Jd79676` for the JD79676AA IC, and the `GDEY0213F52`
+  panel (2.13" 122 x 250 Quad-Color, Good Display). Init follows Good Display's own demo: reset,
+  `0xE9 0x01` and `PON`, with panel, power, booster and resolution settings left to OTP.
+  Sleep has no 100 ms delay, unlike `Jd79661Controller`. **Bench-confirmed** blocking on
+  RP2350, RP2040 and ESP32-C3 and async on RP2350. A full refresh measured 15.9 s on RP2040
+  (the datasheet says about 11 s). Fast init is not implemented, because `0xE6` and the bare
+  `0xA5` command in the demo's fast path are not in the datasheet.
+
+### Changed
+
+- `Jd7966xVariant` gained a `Jd79676` variant. Code that matches on it exhaustively needs a new
+  arm, which is why this ships as 0.7.0.
+
 ## [0.6.2] - 2026-10-09
 
 ### Added
@@ -652,7 +669,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/melastmohican/epdsi/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/melastmohican/epdsi/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/melastmohican/epdsi/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/melastmohican/epdsi/compare/v0.5.0...v0.6.0
