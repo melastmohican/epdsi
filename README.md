@@ -137,7 +137,7 @@ Add `epdsi` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-epdsi = "0.2"
+epdsi = "0.7"
 embedded-graphics = "0.8"
 ```
 

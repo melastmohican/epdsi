@@ -46,7 +46,7 @@ default = ["blocking", "graphics"]
 # Blocking `embedded-hal` 1.0 API (the default). Disabling this (via `default-features = false`)
 # switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead —
 # the two APIs are mutually exclusive, not additive, so re-add `graphics` explicitly if wanted:
-# `epdsi = { version = "0.2", default-features = false, features = ["graphics"] }`.
+# `epdsi = { version = "0.7", default-features = false, features = ["graphics"] }`.
 blocking = []
 graphics = ["dep:embedded-graphics-core"]
 defmt = ["dep:defmt", "dep:thiserror"]

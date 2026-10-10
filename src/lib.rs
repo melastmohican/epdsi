@@ -152,7 +152,7 @@
 //!   additive, since a bus can only be one or the other:
 //!
 //!   ```toml
-//!   epdsi = { version = "0.2", default-features = false, features = ["graphics"] }
+//!   epdsi = { version = "0.7", default-features = false, features = ["graphics"] }
 //!   ```
 //!
 //!   The async shape mirrors the blocking one exactly (same types, same method names, every
