@@ -20,7 +20,8 @@
 //! [`Jd7966xVariant::Jd79676`] (JD79676AA, `GDEY0213F52`) shares the same register table as far
 //! as the JD79676AA v1.0.4 datasheet shows, but Good Display's demo does not program it: init is
 //! `0xE9 0x01` then `PON`, and the IC runs from OTP. Its PSR `RES` bits encode 128x250 as `00`,
-//! where JD79661AA uses `10`, so a JD79661 init sequence must not be reused for it.
+//! where JD79661AA uses `10`. A bench run on a `GDEY0213F52` drew correctly under the JD79661
+//! init as well, so the OTP-only init is chosen for parity with the vendor demo.
 //!
 //! `0x4D`, `0xE7`, `0xE3`, `0xB4` and `0xB5` are vendor registers **not documented in either
 //! public datasheet** — the same class of undocumented-but-real register as the SSD1680 `0x3F`
@@ -98,7 +99,8 @@ pub enum Jd7966xVariant {
     Jd79661,
     /// JD79676AA — drives `GDEY0213F52`. Good Display's demo runs the IC from its OTP
     /// settings, so init is only `0xE9 0x01` and `PON`: no PSR, PWR, BTST, CDI, TCON or TRES.
-    /// Do not pair it with a JD79661 panel: the OTP defaults do not match.
+    /// The F52 was also seen to draw correctly under the JD79661 init (9 Oct 2026), so this
+    /// variant follows the vendor demo rather than a requirement of the IC.
     Jd79676,
 }
 

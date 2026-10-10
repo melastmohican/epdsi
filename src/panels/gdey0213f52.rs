@@ -6,11 +6,14 @@
 //! - **Identifying an unlabelled unit**: the flex ribbon is stamped `FPC-J002`, the same stamp
 //!   as the `GDEY0213F51` / `ZJY122250-0213AJH-E5`. The ribbon does not tell the two apart.
 //!   Check the rear sticker (`F52` vs `F51`), since the controller IC differs.
-//! - **Controller IC**: JD79676AA. Pair it with [`Jd79676Controller`](crate::controllers::Jd79676Controller)
-//!   only. A JD79661 init renders blank or garbled output on this IC.
+//! - **Controller IC**: JD79676AA. Use [`Jd79676Controller`](crate::controllers::Jd79676Controller),
+//!   which matches Good Display's own demo (`E9 01` then `PON`, the rest from OTP). The
+//!   JD79661 init sequence was also seen to draw this panel correctly on a XIAO ESP32-C3
+//!   (9 Oct 2026), so the pairing is a parity choice with the vendor demo, not a hard rule.
 //! - **Native Resolution**: 122 x 250 pixels
 //! - **RAM Alignment**: 128 pixels (32 bytes per row), 8,000 bytes per 2bpp Quad-Color frame.
-//! - **Refresh**: full refresh only, about 11 s. BUSY is active-low.
+//! - **Refresh**: full refresh only. The datasheet says about 11 s, 15.9 s was measured on an
+//!   RP2040. BUSY is active-low.
 //! - **Colour codes**: black `00`, white `01`, yellow `10`, red `11`.
 
 use crate::traits::{ColorMode, EpdPanel};
