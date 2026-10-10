@@ -118,6 +118,10 @@ pub fn dither_tri(x: u32, y: u32, color: Rgb888, accent: Rgb888) -> TriColor {
 ///
 /// `SevenColor::Orange` and `SevenColor::Clean` are never returned. The palette uses ideal
 /// primaries, not measured ink colors, and real panels render their inks more muted than that.
+///
+/// On a `GDEP073E01` this keeps tonal range and fine detail that nearest-color snapping loses,
+/// so photos look better dithered. The result is duller and browner than the source. A palette
+/// calibrated to measured ink colors is not provided.
 pub fn dither_seven(x: u32, y: u32, color: Rgb888) -> SevenColor {
     const PALETTE: [Rgb888; 6] = [
         Rgb888::BLACK,
