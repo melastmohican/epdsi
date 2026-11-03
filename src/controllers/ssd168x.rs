@@ -106,8 +106,11 @@ pub enum Ssd168xVariant {
 }
 
 /// Display refresh operating mode for SSD168x controllers.
+///
+/// This enum is `#[non_exhaustive]`: a new mode is added in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum Ssd168xRefreshMode {
     /// Full display update using the panel's OTP/full waveform LUT (`UPDATE_DISPLAY_CTRL2 = 0xF7`).
     ///

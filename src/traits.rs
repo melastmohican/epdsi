@@ -10,8 +10,11 @@ use embedded_hal_async::delay::DelayNs;
 use crate::bus::ValidationError;
 
 /// Color operation modes supported by E-Paper displays.
+///
+/// This enum is `#[non_exhaustive]`: a new variant can arrive in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum ColorMode {
     /// Monochrome (1-bit Black and White)
     BlackWhite,
@@ -47,9 +50,12 @@ pub enum ColorMode {
 /// [`Orange`](Self::Orange) with it.
 ///
 /// [`Clean`](Self::Clean) is the clear/blank code and renders as white.
+///
+/// This enum is `#[non_exhaustive]`: a new variant can arrive in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum SevenColor {
     /// Black color (0x0)
     Black = 0x00,
@@ -81,8 +87,11 @@ impl SevenColor {
 }
 
 /// Identifies the frame buffer/RAM color channel being targeted.
+///
+/// This enum is `#[non_exhaustive]`: a new variant can arrive in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum ColorChannel {
     /// Primary Black/White image channel
     BlackWhite,
@@ -177,7 +186,7 @@ pub trait EpdPanel {
 
 /// Trait encapsulating driver IC command sets, register sequences, and refresh triggers.
 ///
-/// Native async-fn-in-trait (stable since Rust 1.75, this crate's MSRV) makes every method here
+/// Native async-fn-in-trait (stable since Rust 1.75) makes every method here
 /// `async fn` in async mode with no `async-trait` boxing needed — see the crate's `blocking`
 /// feature doc for how the two variants are generated from one source.
 ///

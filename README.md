@@ -142,7 +142,7 @@ Add `epdsi` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-epdsi = "0.9"
+epdsi = "0.10"
 embedded-graphics = "0.8"
 ```
 
@@ -164,9 +164,7 @@ the other. See the crate root doc's "Cargo features" section for the two behavio
 worth knowing before switching (async busy-waits have no timeout; `render_paged`'s drawing
 closure stays synchronous either way).
 
-The minimum supported Rust version is **1.75**. The optional `defmt` feature pulls in `defmt` 1.2.0
-or newer on a fresh dependency resolve, and that release needs rustc 1.81. On an older compiler,
-pin it with `cargo update defmt --precise 1.1.1`.
+The minimum supported Rust version is **1.85**.
 
 The snippets below are abridged; for complete flashable programs see [Examples on real hardware](#examples-on-real-hardware).
 
@@ -610,7 +608,7 @@ to it:
 
 ```toml
 [dependencies]
-epdsi = { version = "0.9", default-features = false }
+epdsi = { version = "0.10", default-features = false }
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 maybe-async-cfg = "0.2"

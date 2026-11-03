@@ -1,7 +1,7 @@
 [package]
 name = "epdsi"
-version = "0.9.5"
-edition = "2021"
+version = "0.10.0"
+edition = "2024"
 authors = ["Mariusz Jurgielewicz <mordor@mail.com>"]
 description = "no_std embedded-hal 1.0 compatible Rust driver framework, blocking or async, for Electronic Paper Displays (EPD): SSD1680, SSD1681, SSD1685, SSD1677, UC8253, UC8151D, UC8175, SSD2681, JD79660, JD79661, JD79676, IST7163, ED2208, Pervasive Displays COG"
 license = "MIT OR Apache-2.0"
@@ -11,7 +11,7 @@ readme = "README.md"
 homepage = "https://github.com/melastmohican/epdsi"
 keywords = ["epd", "epaper", "async", "embedded-hal", "embedded-graphics"]
 categories = ["embedded", "no-std", "hardware-support", "asynchronous"]
-rust-version = "1.75"
+rust-version = "1.85"
 exclude = [
     ".agents/",
     ".github/",
@@ -25,12 +25,6 @@ embedded-hal = "1.0.0"
 embedded-graphics-core = { version = "0.4.0", optional = true }
 embedded-hal-async = "1.0.0"
 maybe-async-cfg = "0.2"
-# Not used directly — pins the transitive `defmt -> defmt-parser -> thiserror` dependency below
-# 2.0.21, which raised thiserror-impl's own MSRV to 1.77 and breaks this crate's declared 1.75
-# floor on a fresh (lockfile-less) resolve. `optional`/no-default-features so it neither pulls in
-# `std` (breaking `no_std` targets) nor builds at all unless `defmt` is enabled. Remove once defmt
-# moves past this thiserror version.
-thiserror = { version = "=2.0.19", optional = true, default-features = false }
 
 [dependencies.defmt]
 version = "1.0"
@@ -46,10 +40,10 @@ default = ["blocking", "graphics"]
 # Blocking `embedded-hal` 1.0 API (the default). Disabling this (via `default-features = false`)
 # switches every controller/bus/driver method to its `embedded-hal-async` counterpart instead —
 # the two APIs are mutually exclusive, not additive, so re-add `graphics` explicitly if wanted:
-# `epdsi = { version = "0.9", default-features = false, features = ["graphics"] }`.
+# `epdsi = { version = "0.10", default-features = false, features = ["graphics"] }`.
 blocking = []
 graphics = ["dep:embedded-graphics-core"]
-defmt = ["dep:defmt", "dep:thiserror"]
+defmt = ["dep:defmt"]
 
 [package.metadata.docs.rs]
 all-features = true

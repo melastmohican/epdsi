@@ -145,6 +145,82 @@ pub enum EpdBusError<SPIE, DCE, RSTE, BUSYE> {
     },
 }
 
+impl core::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match *self {
+            ValidationError::BufferTooSmall { required, provided } => {
+                write!(f, "frame buffer too small: need {required} bytes, got {provided}")
+            }
+            ValidationError::InvalidWindow {
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                panel_width,
+                panel_height,
+            } => write!(
+                f,
+                "invalid window ({x_start},{y_start})-({x_end},{y_end}) for a {panel_width}x{panel_height} panel"
+            ),
+            ValidationError::InvalidLutLength { expected, provided } => {
+                write!(f, "LUT length {provided} does not match the expected {expected} bytes")
+            }
+            ValidationError::InvalidPartialWindowAlignment { x, width } => {
+                write!(f, "partial window x={x} width={width} must be multiples of 4 and non-zero")
+            }
+        }
+    }
+}
+
+impl core::error::Error for ValidationError {}
+
+impl<SPIE, DCE, RSTE, BUSYE> core::fmt::Display for EpdBusError<SPIE, DCE, RSTE, BUSYE>
+where
+    SPIE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            EpdBusError::Spi(e) => write!(f, "SPI transfer failed: {e:?}"),
+            EpdBusError::Dc(e) => write!(f, "DC pin error: {e:?}"),
+            EpdBusError::Reset(e) => write!(f, "RST pin error: {e:?}"),
+            EpdBusError::Busy(e) => write!(f, "BUSY pin error: {e:?}"),
+            EpdBusError::Timeout => f.write_str("BUSY stayed asserted past the timeout"),
+            EpdBusError::BufferTooSmall { required, provided } => {
+                write!(f, "frame buffer too small: need {required} bytes, got {provided}")
+            }
+            EpdBusError::InvalidWindow {
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                panel_width,
+                panel_height,
+            } => write!(
+                f,
+                "invalid window ({x_start},{y_start})-({x_end},{y_end}) for a {panel_width}x{panel_height} panel"
+            ),
+            EpdBusError::InvalidLutLength { expected, provided } => {
+                write!(f, "LUT length {provided} does not match the expected {expected} bytes")
+            }
+            EpdBusError::InvalidPartialWindowAlignment { x, width } => {
+                write!(f, "partial window x={x} width={width} must be multiples of 4 and non-zero")
+            }
+        }
+    }
+}
+
+impl<SPIE, DCE, RSTE, BUSYE> core::error::Error for EpdBusError<SPIE, DCE, RSTE, BUSYE>
+where
+    SPIE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
+}
+
 impl<SPIE, DCE, RSTE, BUSYE> From<ValidationError> for EpdBusError<SPIE, DCE, RSTE, BUSYE> {
     fn from(err: ValidationError) -> Self {
         match err {

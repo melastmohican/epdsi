@@ -84,8 +84,11 @@ impl PervasiveBwryVariant {
 
 /// Error type for [`PervasiveBwryController::read_otp`], extending bit-banged bus errors with OTP
 /// handshake failures.
+///
+/// This enum is `#[non_exhaustive]`: a new failure mode can arrive in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum PervasiveBwryOtpError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> {
     /// Underlying bit-banged bus/GPIO error.
     Bus(Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>),
@@ -93,6 +96,41 @@ pub enum PervasiveBwryOtpError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> {
     UnexpectedChipId(u16),
     /// OTP bank-start marker (`0xA5`) was not found at either the primary or bank-2 fallback offset.
     InvalidOtpMarker,
+}
+
+impl<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> core::fmt::Display
+    for PervasiveBwryOtpError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>
+where
+    CSE: core::fmt::Debug,
+    SCKE: core::fmt::Debug,
+    DATAE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PervasiveBwryOtpError::Bus(e) => write!(f, "OTP read failed on the bus: {e}"),
+            PervasiveBwryOtpError::UnexpectedChipId(id) => {
+                write!(f, "unexpected OTP chip ID {id:#06x}")
+            }
+            PervasiveBwryOtpError::InvalidOtpMarker => {
+                f.write_str("OTP bank-start marker 0xA5 not found")
+            }
+        }
+    }
+}
+
+impl<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> core::error::Error
+    for PervasiveBwryOtpError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>
+where
+    CSE: core::fmt::Debug,
+    SCKE: core::fmt::Debug,
+    DATAE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
 }
 
 impl<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> From<Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>>

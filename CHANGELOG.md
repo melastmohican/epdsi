@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-03
+
+### Changed
+
+- **Breaking:** the minimum supported Rust version is now 1.85 (was 1.75) and the crate is on edition 2024. Builds on rustc 1.75 to 1.84 stop working; cargo 1.84 or newer with `rust-version` set in your package falls back to 0.9.x on its own. The internal `thiserror` pin behind the `defmt` feature is gone, and so is the `cargo update defmt --precise 1.1.1` workaround for older compilers.
+- **Breaking:** `ColorMode`, `SevenColor`, `ColorChannel`, `PervasiveRefreshMode`, `Ssd168xRefreshMode`, `Ssd1677RefreshMode` and `PervasiveBwryOtpError` are now `#[non_exhaustive]`. A `match` on one of them outside this crate needs a wildcard arm. The point is that a new colour mode or refresh mode can ship in a patch release from now on.
+
+### Added
+
+- `core::fmt::Display` and `core::error::Error` for `ValidationError`, `EpdBusError`, `Spi3BusError` and `PervasiveBwryOtpError`, so they work with `?` into `Box<dyn Error>` and with error-reporting crates in `no_std` code. The generic ones need their pin and SPI error types to be `Debug`, which every `embedded-hal` error already is.
+
 ## [0.9.5] - 2026-11-02
 
 ### Added
@@ -835,7 +846,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/melastmohican/epdsi/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/melastmohican/epdsi/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/melastmohican/epdsi/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/melastmohican/epdsi/compare/v0.9.2...v0.9.3

@@ -132,7 +132,7 @@ impl<'a> PageBuffer<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> Dimensions for PageBuffer<'a> {
+impl Dimensions for PageBuffer<'_> {
     fn bounding_box(&self) -> Rectangle {
         Rectangle::new(
             Point::new(0, self.y_offset as i32),
@@ -143,7 +143,7 @@ impl<'a> Dimensions for PageBuffer<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> DrawTarget for PageBuffer<'a> {
+impl DrawTarget for PageBuffer<'_> {
     type Color = BinaryColor;
     type Error = core::convert::Infallible;
 
@@ -331,7 +331,7 @@ impl<'a> PageBufferPair<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> Dimensions for PageBufferPair<'a> {
+impl Dimensions for PageBufferPair<'_> {
     fn bounding_box(&self) -> Rectangle {
         self.bw.bounding_box()
     }
@@ -339,7 +339,7 @@ impl<'a> Dimensions for PageBufferPair<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> DrawTarget for PageBufferPair<'a> {
+impl DrawTarget for PageBufferPair<'_> {
     type Color = TriColor;
     type Error = core::convert::Infallible;
 
@@ -523,7 +523,7 @@ impl<'a> GrayBufferPair<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> Dimensions for GrayBufferPair<'a> {
+impl Dimensions for GrayBufferPair<'_> {
     fn bounding_box(&self) -> Rectangle {
         self.plane_a.bounding_box()
     }
@@ -531,7 +531,7 @@ impl<'a> Dimensions for GrayBufferPair<'a> {
 
 #[cfg(feature = "graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
-impl<'a> DrawTarget for GrayBufferPair<'a> {
+impl DrawTarget for GrayBufferPair<'_> {
     type Color = Gray4Color;
     type Error = core::convert::Infallible;
 

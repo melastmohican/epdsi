@@ -340,7 +340,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! epdsi = { version = "0.9", default-features = false }
+//! epdsi = { version = "0.10", default-features = false }
 //! embedded-hal = "1.0"
 //! embedded-hal-async = "1.0"
 //! maybe-async-cfg = "0.2"
@@ -530,12 +530,12 @@
 //!   additive, since a bus can only be one or the other:
 //!
 //!   ```toml
-//!   epdsi = { version = "0.9", default-features = false, features = ["graphics"] }
+//!   epdsi = { version = "0.10", default-features = false, features = ["graphics"] }
 //!   ```
 //!
 //!   The async shape mirrors the blocking one exactly (same types, same method names, every
 //!   fallible method returns the same `Result` — just `.await`ed), generated from one source
-//!   per controller via native async-fn-in-trait (stable since this crate's MSRV, 1.75), so
+//!   per controller via native async-fn-in-trait, so
 //!   there is no separate API to learn. Two differences worth knowing before switching:
 //!
 //!   - [`SpiBusWrapper`]'s busy-wait methods poll with a bounded retry/timeout in blocking
@@ -569,7 +569,7 @@
 //! [`rust-reterminal-e1002-examples`] (XIAO ESP32-S3, Embassy + `esp-hal`). See the README's
 //! "Examples on real hardware" section for the full per-panel verification table and links.
 //!
-//! The minimum supported Rust version is 1.75.
+//! The minimum supported Rust version is 1.85.
 //!
 //! [`Ssd168xController`]: controllers::Ssd168xController
 //! [`Ssd168xVariant::Ssd1685`]: controllers::Ssd168xVariant::Ssd1685

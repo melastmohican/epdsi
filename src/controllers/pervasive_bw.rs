@@ -47,8 +47,11 @@ const REG_DATA_SOFT_RESET: &[u8] = &[0x0E];
 const REG_DATA_ACTIVE_TEMP: &[u8] = &[0x02];
 
 /// Display refresh operating mode for Pervasive Displays controller.
+///
+/// This enum is `#[non_exhaustive]`: a new mode is added in a patch release, so a `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum PervasiveRefreshMode {
     /// Standard full screen update mode.
     #[default]

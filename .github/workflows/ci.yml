@@ -72,18 +72,12 @@ jobs:
         uses: dtolnay/rust-toolchain@v1
         with:
           # Must match `rust-version` in Cargo.toml.
-          toolchain: "1.75"
+          toolchain: "1.85"
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
       - name: Drop lockfile
-        # The committed Cargo.lock is format v4, which Cargo 1.75 cannot parse.
-        # Resolving fresh here also mirrors what a consumer on the MSRV would get.
+        # Resolving fresh here mirrors what a consumer on the MSRV would get.
         run: rm -f Cargo.lock
-      - name: Pin defmt to a release that builds on the MSRV
-        # defmt 1.2.0 (15 Oct 2026) declares rust-version 1.81, which fails the fresh resolve
-        # above. Remove once the MSRV is 1.81 or newer. A consumer building the `defmt` feature
-        # on rustc older than 1.81 needs the same pin.
-        run: cargo update defmt --precise 1.1.1
       - name: Check library (blocking)
         run: cargo check --all-features
       - name: Check library (async)

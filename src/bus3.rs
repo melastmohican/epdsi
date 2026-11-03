@@ -60,6 +60,41 @@ pub enum Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> {
     Timeout,
 }
 
+impl<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> core::fmt::Display
+    for Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>
+where
+    CSE: core::fmt::Debug,
+    SCKE: core::fmt::Debug,
+    DATAE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Spi3BusError::Cs(e) => write!(f, "CS pin error: {e:?}"),
+            Spi3BusError::Sck(e) => write!(f, "SCK pin error: {e:?}"),
+            Spi3BusError::Data(e) => write!(f, "DATA pin error: {e:?}"),
+            Spi3BusError::Dc(e) => write!(f, "DC pin error: {e:?}"),
+            Spi3BusError::Reset(e) => write!(f, "RST pin error: {e:?}"),
+            Spi3BusError::Busy(e) => write!(f, "BUSY pin error: {e:?}"),
+            Spi3BusError::Timeout => f.write_str("BUSY stayed asserted past the timeout"),
+        }
+    }
+}
+
+impl<CSE, SCKE, DATAE, DCE, RSTE, BUSYE> core::error::Error
+    for Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>
+where
+    CSE: core::fmt::Debug,
+    SCKE: core::fmt::Debug,
+    DATAE: core::fmt::Debug,
+    DCE: core::fmt::Debug,
+    RSTE: core::fmt::Debug,
+    BUSYE: core::fmt::Debug,
+{
+}
+
 /// Alias for [`Spi3Bus`] operation results.
 pub type Spi3BusResult<CSE, SCKE, DATAE, DCE, RSTE, BUSYE, T = ()> =
     Result<T, Spi3BusError<CSE, SCKE, DATAE, DCE, RSTE, BUSYE>>;
