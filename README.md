@@ -665,6 +665,7 @@ async producing the same on-panel result from the same driver code:
 | [`Uc8253Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8253_se0352n14_epd.rs) (`Uc8253Variant::Se0352n14`) | `SE0352N14TNGA0`: 3.52" Tri-Color | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Ssd1677Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_epd.rs) | `GDEQ0426T82`: 4.26" Mono | RP2350, RP2040, ESP32-C3 | RP2350 |
 | [`Ssd1677Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/ssd1677_gdeq0426t82_gray4_epd.rs) | `GDEQ0426T82`: 4.26" Gray4 | RP2350, RP2040, ESP32-C3 | RP2350 |
+| [`Uc8175Controller`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/uc8175_gdew0102i4fc_epd.rs) | `GDEW0102I4FC`: 1.02" Mono | RP2350, ESP32-C3 | RP2350 |
 | [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2266ks0c1.rs) (Driver C) | `E2266KS0C1`: 2.66" Mono | RP2350 | RP2350 |
 | [`PervasiveBwController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2290ks0f1.rs) (Driver F) | `E2290KS0F1`: 2.90" Mono | RP2350 | RP2350 |
 | [`PervasiveBwryController`](https://github.com/melastmohican/rust-rpico2-discovery/blob/main/examples/pdi_e2154qs0f1.rs) (Driver F) | `E2154QS0F1`: 1.54" Spectra-4 | RP2350 | RP2350 |
