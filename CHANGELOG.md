@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Uc8175Controller` and the `GDEW0102I4FC` panel (1.02" Good Display, 80 x 128, Monochrome). Full refresh on the OTP waveform only; `with_rotated_180(true)` selects the vendor's `EPD_Init_180` panel setting. Register sequences replay Good Display's `AU-GDEW0102I4FC-20250926` demo and are pinned by byte-exact tests, blocking and async. Bench verified with the blocking API on an XIAO ESP32-C3 wired to a `DESPI-C102` on 2 Nov 2026. If the picture is noise, reseat the 30-pin FPC first: a half-seated FPC gave noise on both the C3 and an XIAO MG24, with Good Display's own sketch too.
+
 ## [0.9.4] - 2026-10-22
 
 ### Changed

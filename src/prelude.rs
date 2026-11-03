@@ -9,7 +9,7 @@ pub use crate::controllers::{
     PervasiveRefreshMode, Ssd1677Controller, Ssd1677RefreshMode, Ssd1680Controller,
     Ssd1680RefreshMode, Ssd1681Controller, Ssd1681RefreshMode, Ssd168xController,
     Ssd168xRefreshMode, Ssd168xVariant, Ssd2681Controller, Ssd2681RefreshMode, Uc8151dController,
-    Uc8151dRefreshMode, Uc8253Controller, Uc8253RefreshMode, Uc8253Variant,
+    Uc8151dRefreshMode, Uc8175Controller, Uc8253Controller, Uc8253RefreshMode, Uc8253Variant,
 };
 pub use crate::driver::{EpdBuilder, EpdDriver};
 pub use crate::graphics::buffer::{
@@ -24,7 +24,7 @@ pub use crate::panels::{
     GxEPD2_266_GDEY0266T90, GxEPD2_266c, GxEPD2_370_GDEY037T03, GxEPD2_426_GDEQ0426T82,
     GxEPD2_730c_GDEP073E01, E2154QS0F1, E2266KS0C1, E2290KS0F1, E2417QS0A3, EPD_154_QS_0F,
     EPD_266_KS_0C, EPD_290_KS_0F, EPD_417_QS_0A, GDEM0154F51H, GDEM0154F61H, GDEM0154Z90,
-    GDEM0213B74, GDEM037F51, GDEP073E01, GDEQ0426T82, GDEW0215T12, GDEY0213F51, GDEY0213F52,
+    GDEM0213B74, GDEM037F51, GDEP073E01, GDEQ0426T82, GDEW0102I4FC, GDEW0215T12, GDEY0213F51, GDEY0213F52,
     GDEY0266T90, GDEY0266T90H, GDEY0266Z90, GDEY037T03, SE0352N14TNGA0, ZJY122250_0213AJH_E5,
 };
 pub use crate::policy::{RefreshKind, RefreshPolicy};

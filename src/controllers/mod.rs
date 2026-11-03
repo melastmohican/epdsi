@@ -9,6 +9,7 @@ pub mod ssd1677;
 pub mod ssd168x;
 pub mod ssd2681;
 pub mod uc8151d;
+pub mod uc8175;
 pub mod uc8253;
 
 pub use ed2208::Ed2208Controller;
@@ -26,4 +27,5 @@ pub use ssd168x::{
 };
 pub use ssd2681::{Ssd2681Controller, Ssd2681RefreshMode};
 pub use uc8151d::{Uc8151dController, Uc8151dRefreshMode};
+pub use uc8175::Uc8175Controller;
 pub use uc8253::{Uc8253Controller, Uc8253RefreshMode, Uc8253Variant};
