@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Ssd168xVariant::Ssd1683` and the `GDEY042T81` panel (4.2" 400 x 300 Monochrome, Good Display). Init, `Full` (`0xF7`), `FastFull` (one-byte `1A 6E`, then `0xC7`) and `Partial` (`0xFF`, after border `80` and `0x21 = 00 00`) follow Good Display's `AU-GDEY042T81-FP4G-20240801` demo and are pinned by byte-exact tests, blocking and async. Not yet verified on hardware.
+- `Ssd168xRefreshMode::Gray4Otp`: 4-level grayscale on the SSD1683's built-in waveform, no LUT upload (`0x21 = 00 00`, `1A 5A`, `0x91`, then `0xCF`), from the same Good Display demo's `EPD_HW_Init_4G`. SSD1683 only. Draw with `Gray4Polarity::ADAFRUIT_SSD1677`. Not yet verified on hardware.
+
 ## [0.10.0] - 2026-11-03
 
 ### Changed

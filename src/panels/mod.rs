@@ -18,6 +18,7 @@ pub mod gdey0266t90;
 pub mod gdey0266t90h;
 pub mod gdey0266z90;
 pub mod gdey037t03;
+pub mod gdey042t81;
 pub mod se0352n14tnga0;
 pub mod zjy122250;
 
@@ -39,5 +40,6 @@ pub use gdey0266t90::{GxEPD2_266_GDEY0266T90, GDEY0266T90};
 pub use gdey0266t90h::GDEY0266T90H;
 pub use gdey0266z90::{GxEPD2_266c, GDEY0266Z90};
 pub use gdey037t03::{GxEPD2_370_GDEY037T03, GDEY037T03};
+pub use gdey042t81::GDEY042T81;
 pub use se0352n14tnga0::SE0352N14TNGA0;
 pub use zjy122250::{GxEPD2_213c_GDEY0213F51, GDEY0213F51, ZJY122250_0213AJH_E5};

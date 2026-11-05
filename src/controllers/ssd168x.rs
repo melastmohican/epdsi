@@ -103,6 +103,25 @@ pub enum Ssd168xVariant {
     /// Selecting this variant for an SSD1680/SSD1681 panel, or the reverse, does not error: it
     /// sends the wrong refresh bytes. Pair it only with SSD1685 glass.
     Ssd1685,
+    /// SSD1683 IC variant (400 × 300 RAM space, 50 bytes per row).
+    ///
+    /// Paired with [`GDEY042T81`](crate::panels::GDEY042T81). It writes `0x21 = 40 00` at init (red
+    /// RAM bypassed as zero), which no other variant does, and its refresh bytes follow Good
+    /// Display's `AU-GDEY042T81-FP4G-20240801` demo:
+    ///
+    /// | Mode | Byte | Source |
+    /// | :--- | :--- | :--- |
+    /// | `Full` | `0xF7` | vendor `EPD_Update` |
+    /// | `Partial` | `0xFF`, after `0x3C = 80` and `0x21 = 00 00` | vendor `EPD_Part_Update` (GxEPD2 and ESPHome send `0xFC`, which the SSD1683 datasheet's `0x22` table does not list) |
+    /// | `FastFull` | `0xC7` after a one-byte `0x1A = 6E` temperature override | vendor `EPD_HW_Init_Fast` |
+    /// | `Gray4Otp` | `0xCF`, after `0x21 = 00 00` and `0x1A = 5A` | vendor `EPD_Update_4G` (see [`Ssd168xRefreshMode::Gray4Otp`]) |
+    ///
+    /// The vendor partial also hard-resets first. This variant does not: `epdsi` triggers the
+    /// refresh after the RAM write, and a reset at that point has not been tried on this IC.
+    ///
+    /// Selecting this variant for another SSD168x panel, or the reverse, does not error: it sends
+    /// the wrong `0x21` and refresh bytes. Pair it only with SSD1683 glass.
+    Ssd1683,
 }
 
 /// Display refresh operating mode for SSD168x controllers.
@@ -174,6 +193,23 @@ pub enum Ssd168xRefreshMode {
     /// trigger bare — no temperature preamble, no extra power envelope — because the byte is
     /// itself a complete operating sequence.
     Gray4,
+    /// 4-level grayscale on the controller's built-in waveform, with no custom LUT
+    /// (`UPDATE_DISPLAY_CTRL2 = 0xCF`, after a `0x1A = 5A` temperature override).
+    ///
+    /// **SSD1683 only** ([`Ssd168xVariant::Ssd1683`], `GDEY042T81`). Ported from Good Display's
+    /// `EPD_HW_Init_4G()` / `EPD_Update_4G()`: write `0x21 = 00 00` so the red RAM is read as a
+    /// real plane, force 90 C with `0x1A = 5A`, load that temperature's OTP waveform with `0x91`,
+    /// then display on `0xCF`. The SSD1683 datasheet lists `0xCF` as "display, B/W mode" only, so
+    /// the two RAM planes carry the two gray bits (`0x24` and `0x26`) rather than black/white and
+    /// red.
+    ///
+    /// The vendor splits a 2 bits-per-pixel image into planes so that a raw white pixel is `1` on
+    /// both planes and black is `0` on both. That is [`Gray4Polarity::ADAFRUIT_SSD1677`](crate::graphics::buffer::Gray4Polarity::ADAFRUIT_SSD1677)
+    /// (both planes inverted) once the pixels are drawn as
+    /// [`Gray4Color`](crate::graphics::buffer::Gray4Color)s. Unlike [`Ssd168xRefreshMode::Gray4`]
+    /// it needs no [`Gray4Registers`] bundle and no change to init. Not yet verified on hardware,
+    /// so which of the two middle grays is `Light` and which is `Dark` is unconfirmed.
+    Gray4Otp,
 }
 
 /// Generic SSD168x (SSD1680 / SSD1681) Controller IC driver implementation.
@@ -454,6 +490,11 @@ impl Ssd168xController {
     /// Creates a new SSD1685 controller instance configured for target display dimensions.
     pub fn new_ssd1685(width: u32, height: u32) -> Self {
         Self::new(width, height, Ssd168xVariant::Ssd1685)
+    }
+
+    /// Creates a new SSD1683 controller instance configured for target display dimensions.
+    pub fn new_ssd1683(width: u32, height: u32) -> Self {
+        Self::new(width, height, Ssd168xVariant::Ssd1683)
     }
 
     /// Creates a new SSD168x controller with target dimensions and variant.
@@ -805,10 +846,18 @@ where
             }
         }
 
-        // SSD1680 specific: Display Update Control 1 (RAM content option / source output mode)
-        if self.variant == Ssd168xVariant::Ssd1680 {
-            bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x80])
-                .await?;
+        // Display Update Control 1 (RAM content option / source output mode). SSD1680 and
+        // SSD1683 only: the SSD1683 byte is Good Display's `40 00`, which bypasses red RAM.
+        match self.variant {
+            Ssd168xVariant::Ssd1680 => {
+                bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x80])
+                    .await?;
+            }
+            Ssd168xVariant::Ssd1683 => {
+                bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x40, 0x00])
+                    .await?;
+            }
+            Ssd168xVariant::Ssd1681 | Ssd168xVariant::Ssd1685 => {}
         }
 
         // Internal Temperature Sensor Selection
@@ -938,6 +987,27 @@ where
             return bus.wait_busy_with_delay(delay, true).await;
         }
 
+        // SSD1683 Gray4 on the built-in waveform: Good Display's `EPD_HW_Init_4G()` temperature
+        // override and OTP load, then `EPD_Update_4G()`'s `0xCF`. `0x21 = 00 00` replaces init's
+        // `40 00`, which would bypass the red RAM that carries the second gray bit.
+        if self.refresh_mode == Ssd168xRefreshMode::Gray4Otp {
+            bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x00])
+                .await?;
+            bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[0x5A])
+                .await?;
+            bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x91])
+                .await?;
+            bus.send_command(cmd::MASTER_ACTIVATE).await?;
+            delay.delay_ms(1).await;
+            bus.wait_busy_with_delay(delay, true).await?;
+
+            bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0xCF])
+                .await?;
+            bus.send_command(cmd::MASTER_ACTIVATE).await?;
+            delay.delay_ms(1).await;
+            return bus.wait_busy_with_delay(delay, true).await;
+        }
+
         // Fast waveform: load the sensor temperature, override the register with 90 °C, then
         // reload the OTP LUT at that temperature. Good Display issue this from a dedicated
         // `EPD_HW_Init_Fast()` that skips driver output control, data entry mode and the RAM
@@ -956,11 +1026,18 @@ where
             // which the SSD1680 and SSD1681 arms use. The `GDEM0213B74` demo writes `64 00`
             // (100 °C), so that panel's fast pass runs 10 °C off its own vendor.
             let fast_temperature = match self.variant {
-                Ssd168xVariant::Ssd1685 => 0x6E,
+                Ssd168xVariant::Ssd1683 | Ssd168xVariant::Ssd1685 => 0x6E,
                 Ssd168xVariant::Ssd1680 | Ssd168xVariant::Ssd1681 => 0x5A,
             };
-            bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[fast_temperature, 0x00])
-                .await?;
+            // The SSD1683 register is a single byte, and its vendor demo writes one. The other
+            // variants keep the two-byte write their own demos use.
+            if self.variant == Ssd168xVariant::Ssd1683 {
+                bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[fast_temperature])
+                    .await?;
+            } else {
+                bus.send_command_with_data(cmd::WRITE_TEMP_REG, &[fast_temperature, 0x00])
+                    .await?;
+            }
 
             bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x91])
                 .await?;
@@ -977,7 +1054,7 @@ where
             // as `Full`-only), so the SSD1681 byte stays the pre-existing `0xFC` rather than
             // changing on no evidence.
             Ssd168xRefreshMode::Partial => match self.variant {
-                Ssd168xVariant::Ssd1680 => 0xFF,
+                Ssd168xVariant::Ssd1680 | Ssd168xVariant::Ssd1683 => 0xFF,
                 Ssd168xVariant::Ssd1681 => 0xFC,
                 // GxEPD2's SSD1685 driver (`GxEPD2_290_GDEY029T71H::_Update_Part`). Good
                 // Display's `GDEY0266T90H` demo sends a bare `0x1C`, which has no clock/analog
@@ -988,8 +1065,9 @@ where
             },
             Ssd168xRefreshMode::FastFull => 0xC7,
             Ssd168xRefreshMode::BaseMap => 0xF4,
-            // Unreachable: handled by the early return above.
+            // Unreachable: both handled by the early returns above.
             Ssd168xRefreshMode::Gray4 => 0xC7,
+            Ssd168xRefreshMode::Gray4Otp => 0xCF,
         };
 
         // Every mode goes through the same per-variant power envelope. The vendor references
@@ -1030,6 +1108,21 @@ where
 
                 // Power off sequence
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[0x83])
+                    .await?;
+                bus.send_command(cmd::MASTER_ACTIVATE).await?;
+                delay.delay_ms(1).await;
+                bus.wait_busy_with_delay(delay, true).await
+            }
+            Ssd168xVariant::Ssd1683 => {
+                // Vendor `EPD_Dis_Part`/`EPD_Dis_PartAll`: border `80` and `0x21 = 00 00` ahead
+                // of the partial trigger, minus the vendor's hard reset (see the variant docs).
+                if self.refresh_mode == Ssd168xRefreshMode::Partial {
+                    bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x80])
+                        .await?;
+                    bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x00])
+                        .await?;
+                }
+                bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])
                     .await?;
                 bus.send_command(cmd::MASTER_ACTIVATE).await?;
                 delay.delay_ms(1).await;
