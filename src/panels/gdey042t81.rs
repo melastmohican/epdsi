@@ -44,7 +44,9 @@
 //! async, `Partial` 411 ms and 410 ms, `FastFull` 1666 ms and 1665 ms. The C3 gives 1585, 411 and
 //! 1666 ms, and the Feather 1585, 411 and 1667 ms, so the panel sets the time. Like
 //! the SSD1685 [`GDEY0266T90H`](crate::panels::GDEY0266T90H), `FastFull` is slower than `Full` at
-//! room temperature, so stay on `Full`. `Gray4Otp` was not timed.
+//! room temperature, so stay on `Full`. The vendor's second fast mode (`1A 5A`, `EPD_HW_Init_Fast2`, labelled
+//! "1s") was tried on this unit and is worse: 2449 ms and a washed-out picture. epdsi does not send it.
+//! `Gray4Otp` was not timed.
 //!
 //! ### Vendor References
 //! - Good Display product page: <https://www.good-display.com/product/386.html>
