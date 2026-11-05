@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Ssd168xVariant::Ssd1683` and the `GDEY042T81` panel (4.2" 400 x 300 Monochrome, Good Display). Init, `Full` (`0xF7`), `FastFull` (one-byte `1A 6E`, then `0xC7`) and `Partial` (`0xFF`, after border `80` and `0x21 = 00 00`) follow Good Display's `AU-GDEY042T81-FP4G-20240801` demo and are pinned by byte-exact tests, blocking and async. Bench verified on 4 Nov 2026 on a Pico 2, blocking and async: `Full` 1585 ms, `Partial` 411 ms, `FastFull` 1666 ms (slower than `Full`, so stay on `Full`).
-- `Ssd168xRefreshMode::Gray4Otp`: 4-level grayscale on the SSD1683's built-in waveform, no LUT upload (`0x21 = 00 00`, `1A 5A`, `0x91`, then `0xCF`), from the same Good Display demo's `EPD_HW_Init_4G`. SSD1683 only. Draw with `Gray4Polarity::ADAFRUIT_SSD1677`. Bench verified on the same Pico 2 runs.
+- `Ssd168xVariant::Ssd1683` and the `GDEY042T81` panel (4.2" 400 x 300 Monochrome, Good Display). Init, `Full` (`0xF7`), `FastFull` (one-byte `1A 6E`, then `0xC7`) and `Partial` (`0xFF`, after border `80` and `0x21 = 00 00`) follow Good Display's `AU-GDEY042T81-FP4G-20240801` demo and are pinned by byte-exact tests, blocking and async. Bench verified on 4 and 5 Nov 2026 on a Pico 2 (blocking and async), a XIAO ESP32-C3 and a Feather RP2040 ThinkInk, which agree within 2 ms: `Full` 1585 ms, `Partial` 411 ms, `FastFull` 1666 ms (slower than `Full`, so stay on `Full`).
+- `Ssd168xRefreshMode::Gray4Otp`: 4-level grayscale on the SSD1683's built-in waveform, no LUT upload (`0x21 = 00 00`, `1A 5A`, `0x91`, then `0xCF`), from the same Good Display demo's `EPD_HW_Init_4G`. SSD1683 only. Draw with `Gray4Polarity::ADAFRUIT_SSD1677`. Bench verified on the same three boards.
 
 ## [0.10.0] - 2026-11-03
 
