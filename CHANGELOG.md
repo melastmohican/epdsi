@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-05
+
 ### Added
 
 - `Ssd168xVariant::Ssd1683` and the `GDEY042T81` panel (4.2" 400 x 300 Monochrome, Good Display). Init, `Full` (`0xF7`), `FastFull` (one-byte `1A 6E`, then `0xC7`) and `Partial` (`0xFF`, after border `80` and `0x21 = 00 00`) follow Good Display's `AU-GDEY042T81-FP4G-20240801` demo and are pinned by byte-exact tests, blocking and async. Bench verified on 4 and 5 Nov 2026 on a Pico 2 (blocking and async), a XIAO ESP32-C3 and a Feather RP2040 ThinkInk, which agree within 2 ms: `Full` 1585 ms, `Partial` 411 ms, `FastFull` 1666 ms (slower than `Full`, so stay on `Full`).
@@ -851,7 +853,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/melastmohican/epdsi/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/melastmohican/epdsi/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/melastmohican/epdsi/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/melastmohican/epdsi/compare/v0.9.3...v0.9.4
