@@ -210,8 +210,8 @@ pub enum Ssd168xRefreshMode {
     /// both planes and black is `0` on both. That is [`Gray4Polarity::ADAFRUIT_SSD1677`](crate::graphics::buffer::Gray4Polarity::ADAFRUIT_SSD1677)
     /// (both planes inverted) once the pixels are drawn as
     /// [`Gray4Color`](crate::graphics::buffer::Gray4Color)s. Unlike [`Ssd168xRefreshMode::Gray4`]
-    /// it needs no [`Gray4Registers`] bundle and no change to init. Not yet verified on hardware,
-    /// so which of the two middle grays is `Light` and which is `Dark` is unconfirmed.
+    /// it needs no [`Gray4Registers`] bundle and no change to init. Confirmed on a `GDEY042T81`
+    /// (4 Nov 2026, Pico 2, blocking and async): the swatches render in the expected order.
     Gray4Otp,
 }
 

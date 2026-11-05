@@ -38,7 +38,11 @@
 //!
 //! ### Status
 //! Register sequences derived from the vendor demo and datasheet above and pinned by byte-exact
-//! tests. Not yet verified on physical hardware, `Gray4Otp` included.
+//! tests. **Confirmed on physical hardware** (4 Nov 2026): the mono and Gray4 examples ran and
+//! rendered correctly on a Pico 2 (RP2350), blocking and async. Measured there: `Full` 1585 ms
+//! blocking and 1584 ms async, `Partial` 411 ms and 410 ms, `FastFull` 1666 ms and 1665 ms. Like
+//! the SSD1685 [`GDEY0266T90H`](crate::panels::GDEY0266T90H), `FastFull` is slower than `Full` at
+//! room temperature, so stay on `Full`. `Gray4Otp` was not timed.
 //!
 //! ### Vendor References
 //! - Good Display product page: <https://www.good-display.com/product/386.html>
