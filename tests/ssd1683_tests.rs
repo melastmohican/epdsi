@@ -101,10 +101,12 @@ epd_test!(test_ssd1683_init_sequence, ssd1683_init_sequence_body);
     async(not(feature = "blocking"), keep_self)
 )]
 async fn ssd1683_full_refresh_body() {
-    // Vendor `EPD_Update`: 0xF7.
+    // Vendor `EPD_Update`: 0xF7, preceded by the `0x21 = 40 00` its init always sets.
     assert_eq!(
         record_refresh(Ssd168xRefreshMode::Full).await,
         vec![
+            SpiRecord::Command(0x21), // restores the init value after a Partial or Gray4Otp
+            SpiRecord::Data(vec![0x40, 0x00]),
             SpiRecord::Command(0x22),
             SpiRecord::Data(vec![0xF7]),
             SpiRecord::Command(0x20),
@@ -153,6 +155,8 @@ async fn ssd1683_fast_full_refresh_body() {
             SpiRecord::Command(0x22),
             SpiRecord::Data(vec![0x91]),
             SpiRecord::Command(0x20),
+            SpiRecord::Command(0x21),
+            SpiRecord::Data(vec![0x40, 0x00]),
             SpiRecord::Command(0x22),
             SpiRecord::Data(vec![0xC7]),
             SpiRecord::Command(0x20),

@@ -116,6 +116,9 @@ pub enum Ssd168xVariant {
     /// | `FastFull` | `0xC7` after a one-byte `0x1A = 6E` temperature override | vendor `EPD_HW_Init_Fast` |
     /// | `Gray4Otp` | `0xCF`, after `0x21 = 00 00` and `0x1A = 5A` | vendor `EPD_Update_4G` (see [`Ssd168xRefreshMode::Gray4Otp`]) |
     ///
+    /// `Full` and `FastFull` rewrite `0x21 = 40 00` just before the trigger, so they behave the same
+    /// after a `Partial` or `Gray4Otp` (both leave `00 00`) as they do straight after init.
+    ///
     /// The vendor partial also hard-resets first. This variant does not: `epdsi` triggers the
     /// refresh after the RAM write, and a reset at that point has not been tried on this IC.
     ///
@@ -1120,6 +1123,12 @@ where
                     bus.send_command_with_data(cmd::BORDER_WAVEFORM_CONTROL, &[0x80])
                         .await?;
                     bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x00, 0x00])
+                        .await?;
+                } else {
+                    // The vendor runs a full init, with `21 40 00`, before every non-partial
+                    // update. Writing it here keeps a `Full` after a `Partial` (or `Gray4Otp`)
+                    // on the same RAM option without a re-init.
+                    bus.send_command_with_data(cmd::DISPLAY_UPDATE_CTRL1, &[0x40, 0x00])
                         .await?;
                 }
                 bus.send_command_with_data(cmd::UPDATE_DISPLAY_CTRL2, &[mode_byte])
