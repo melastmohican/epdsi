@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `GDEY029F52` panel (2.9" 128 x 296 Quad-Color, Good Display), on `Jd79661Controller`. Bench verified on 5 Nov 2026 through the real controller on a XIAO ESP32-C3 (`jd79661_gdey029f52_epd` in `xiao-esp32c3-blinky`), a Pico 2 with the blocking API (`jd79661_gdey029f52_epd` in `rust-rpico2-discovery`) and the async API (`epdsi_jd79661_gdey029f52` in `rust-rpico2-embassy-examples`), and a Feather RP2040 ThinkInk (`jd79661_gdey029f52_epd` in `adafruit-feather-thinkink-discovery`, 15285 ms and 15293 ms per full refresh). One unit, rear sticker `029SW-F52-B2`, lot `N2B3F02`, R70H `83 02 01`. The vendor demo's TRES `00 80 01 28` matches what the variant sends for this size. The PSR first byte did not matter on the unit: `0F` (vendor), `8F` (the variant) and `4F` all drew the same frame. This is a different product from `GDEY029F51H` (JD79667, 168 x 384), which timed out on the same glass. Good Display's fast init for this panel is a different register sequence and is not implemented.
+
 ## [0.10.1] - 2026-11-05
 
 ### Added

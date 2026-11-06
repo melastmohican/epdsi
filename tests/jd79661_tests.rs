@@ -254,3 +254,74 @@ epd_test!(
     test_jd79661_clear_frame_uses_the_correct_2bpp_byte_count,
     jd79661_clear_frame_uses_the_correct_2bpp_byte_count_body
 );
+
+#[test]
+fn test_jd79661_gdey029f52_panel_dimensions() {
+    assert_eq!(GDEY029F52::WIDTH, 128);
+    assert_eq!(GDEY029F52::HEIGHT, 296);
+    assert_eq!(GDEY029F52::RAM_WIDTH, 128);
+    assert_eq!(GDEY029F52::COLOR_MODE, ColorMode::QuadColor);
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn jd79661_gdey029f52_init_sends_the_vendor_resolution_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut controller = Jd79661Controller::new(GDEY029F52::WIDTH, GDEY029F52::HEIGHT);
+    let mut delay = DummyDelay;
+
+    controller
+        .init_sequence(&mut bus, &mut delay)
+        .await
+        .unwrap();
+    let records = bus_backend.records.borrow().clone();
+
+    // Good Display's GDEY029F52 demo sends TRES `00 80 01 28` (Source_BITS 128, Gate_BITS 296).
+    let tres = records
+        .iter()
+        .position(|r| *r == SpiRecord::Command(0x61))
+        .expect("TRES command present");
+    assert_eq!(
+        records[tres + 1],
+        SpiRecord::Data(vec![0x00, 0x80, 0x01, 0x28])
+    );
+}
+epd_test!(
+    test_jd79661_gdey029f52_init_sends_the_vendor_resolution,
+    jd79661_gdey029f52_init_sends_the_vendor_resolution_body
+);
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn jd79661_gdey029f52_clear_frame_covers_the_whole_raster_body() {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let controller = Jd79661Controller::new(GDEY029F52::WIDTH, GDEY029F52::HEIGHT);
+    let mut driver = EpdBuilder::<_, GDEY029F52>::new(controller).build(bus);
+
+    driver.init(&mut delay).await.unwrap();
+    bus_backend.records.borrow_mut().clear();
+
+    // 128 px * 2 bits / 8 * 296 rows = 9,472 bytes.
+    driver
+        .clear_frame(ColorChannel::BlackWhite, 0x55)
+        .await
+        .unwrap();
+    let records = coalesce(&bus_backend.records.borrow());
+    assert_eq!(
+        records,
+        vec![SpiRecord::Command(0x10), SpiRecord::Data(vec![0x55; 9_472])]
+    );
+}
+epd_test!(
+    test_jd79661_gdey029f52_clear_frame_covers_the_whole_raster,
+    jd79661_gdey029f52_clear_frame_covers_the_whole_raster_body
+);

@@ -103,7 +103,7 @@ pub enum Jd7966xVariant {
     /// `0xE7`/`0xE3`/`0xB4`/`0xB5`. Drives `GDEM0154F51H`.
     #[default]
     Jd79660,
-    /// JD79661AA — drives `ZJY122250_0213AJH_E5` / `GDEY0213F51`.
+    /// JD79661AA — drives `ZJY122250_0213AJH_E5` / `GDEY0213F51` and `GDEY029F52`.
     Jd79661,
     /// JD79676AA — drives `GDEY0213F52`. Good Display's demo runs the IC from its OTP
     /// settings, so init is only `0xE9 0x01` and `PON`: no PSR, PWR, BTST, CDI, TCON or TRES.
