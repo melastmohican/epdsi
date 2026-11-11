@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-10
+
 ### Added
 
-- `Ed2208RefreshSpeed` (`Normal`, `Medium`, `Fast`) and `Ed2208Controller::with_refresh_speed`, which pick the PLL byte `init` writes to register `0x30`. `Normal` (`0x08`) stays the default. Bench on a `GDEP073E01` (reTerminal E1002, 9 Nov 2026): `Normal` 28.4 s, `Medium` (`0x04`) 21.9 s, `Fast` (`0x07`) 14.3 s. Speed costs colour: blue and green wash out, clearly so at `Fast`. Byte values follow Pimoroni's `inky_e673.py`. No raw byte is exposed, since the vendor fast init's `0x02` was slower and harmful.
+- `Ed2208RefreshSpeed` (`Normal`, `Medium`, `Fast`) and `Ed2208Controller::with_refresh_speed`, which pick the PLL byte `init` writes to register `0x30`. `Normal` (`0x08`) stays the default. Bench on a `GDEP073E01` (reTerminal E1002), through `with_refresh_speed` with the PLL byte written inside `init`, before `PON` (`epd_ed2208_refresh_speed` in `rust-reterminal-e1002-examples`, 10 Nov 2026): `Normal` 28.4 s, `Medium` (`0x04`) 21.9 s, `Fast` (`0x07`) 14.3 s, `Normal` control 28.4 s. Speed costs colour: blue and green wash out, clearly so at `Fast`. Byte values follow Pimoroni's `inky_e673.py`. No raw byte is exposed, since the vendor fast init's `0x02` was slower and harmful.
 
 ## [0.10.2] - 2026-11-05
 
@@ -863,7 +865,8 @@ Initial release.
 - `no_std` builds verified against `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and
   `riscv32imac-unknown-none-elf`.
 
-[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/melastmohican/epdsi/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/melastmohican/epdsi/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/melastmohican/epdsi/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/melastmohican/epdsi/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/melastmohican/epdsi/compare/v0.9.5...v0.10.0

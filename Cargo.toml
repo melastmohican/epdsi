@@ -1,6 +1,6 @@
 [package]
 name = "epdsi"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 authors = ["Mariusz Jurgielewicz <mordor@mail.com>"]
 description = "no_std embedded-hal 1.0 compatible Rust driver framework, blocking or async, for Electronic Paper Displays (EPD): SSD1680, SSD1681, SSD1685, SSD1683, SSD1677, UC8253, UC8151D, UC8175, SSD2681, JD79660, JD79661, JD79676, IST7163, ED2208, Pervasive Displays COG"
