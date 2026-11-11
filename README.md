@@ -269,6 +269,19 @@ epd.write_frame(ColorChannel::Color7(0), &seven_color_frame_buf).unwrap();
 epd.refresh(&mut delay).unwrap();
 ```
 
+The ED2208 full refresh takes about 28 s. `with_refresh_speed` trades colour for time, measured on a `GDEP073E01`:
+
+| `Ed2208RefreshSpeed` | PLL | Refresh | Colour |
+| :--- | :---: | ---: | :--- |
+| `Normal` (default) | `0x08` | 28.4 s | baseline |
+| `Medium` | `0x04` | 21.9 s | blue and green slightly duller |
+| `Fast` | `0x07` | 14.3 s | blue clearly greyer, green olive, red a little dimmer |
+
+```rust,ignore
+let controller = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT)
+    .with_refresh_speed(Ed2208RefreshSpeed::Medium);
+```
+
 ### 5. Usage Example (Ssd1680Controller + GDEM0213B74 Panel)
 
 ```rust,ignore

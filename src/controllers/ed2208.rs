@@ -80,19 +80,70 @@ pub mod cmd {
     pub const PWS: u8 = 0xE3;
 }
 
+/// Refresh speed for [`Ed2208Controller`], written to the PLL control register (`0x30`) during init.
+///
+/// Faster settings shorten the full refresh but wash out colour. Measured on a `GDEP073E01`
+/// (6-bar swatch, 9 Nov 2026):
+///
+/// | Setting | Refresh | Colour |
+/// | :--- | ---: | :--- |
+/// | `Normal` | 28.4 s | baseline |
+/// | `Medium` | 21.9 s | blue and green slightly duller |
+/// | `Fast` | 14.3 s | blue clearly greyer, green lighter and olive, red a little dimmer |
+///
+/// The byte values come from Pimoroni's `inky_e673.py` (`0x08` dynamic frame rate, `0x04` fixed
+/// 75 Hz, `0x07` fixed 120 Hz). The register accepts other bytes, but only these three are known
+/// good: the vendor fast init's `0x02` was slower (33.0 s) and harmful, so no raw byte is exposed.
+/// Fade across chained refreshes and behaviour at other temperatures were not benched.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Ed2208RefreshSpeed {
+    /// PLL `0x08`, dynamic frame rate. Best colour.
+    #[default]
+    Normal,
+    /// PLL `0x04`, fixed 75 Hz.
+    Medium,
+    /// PLL `0x07`, fixed 120 Hz.
+    Fast,
+}
+
+impl Ed2208RefreshSpeed {
+    const fn pll(self) -> u8 {
+        match self {
+            Self::Normal => 0x08,
+            Self::Medium => 0x04,
+            Self::Fast => 0x07,
+        }
+    }
+}
+
 /// ED2208 Controller IC driver implementation.
 #[derive(Debug, Clone, Copy)]
 pub struct Ed2208Controller {
     width: u32,
     height: u32,
+    refresh_speed: Ed2208RefreshSpeed,
 }
 
 impl Ed2208Controller {
     /// Creates a new ED2208 controller configured for target display dimensions.
+    ///
+    /// The refresh speed defaults to [`Ed2208RefreshSpeed::Normal`].
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
+        Self {
+            width,
+            height,
+            refresh_speed: Ed2208RefreshSpeed::Normal,
+        }
     }
 
+    /// Selects the refresh speed sent to the PLL register during init. See [`Ed2208RefreshSpeed`]
+    /// for the colour cost.
+    #[must_use]
+    pub fn with_refresh_speed(mut self, speed: Ed2208RefreshSpeed) -> Self {
+        self.refresh_speed = speed;
+        self
+    }
 }
 
 #[maybe_async_cfg::maybe(
@@ -270,7 +321,7 @@ where
             .await?;
 
         // PLL control
-        bus.send_command_with_data(cmd::PLL_CONTROL, &[0x08])
+        bus.send_command_with_data(cmd::PLL_CONTROL, &[self.refresh_speed.pll()])
             .await?;
 
         // VCOM & data interval setting (CDI)

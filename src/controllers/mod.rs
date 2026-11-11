@@ -12,7 +12,7 @@ pub mod uc8151d;
 pub mod uc8175;
 pub mod uc8253;
 
-pub use ed2208::Ed2208Controller;
+pub use ed2208::{Ed2208Controller, Ed2208RefreshSpeed};
 pub use ist7163::Ist7163Controller;
 pub use jd7966x::{
     Jd79660Controller, Jd79661Controller, Jd7966xController, Jd7966xRefreshMode, Jd7966xVariant,

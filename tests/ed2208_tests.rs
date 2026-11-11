@@ -293,3 +293,50 @@ epd_test!(
     test_ed2208_trigger_partial_refresh_rejects_out_of_bounds,
     ed2208_trigger_partial_refresh_rejects_out_of_bounds_body
 );
+
+/// Returns the data bytes written after the `0x30` PLL command during `init`.
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_init_pll_byte(controller: Ed2208Controller) -> Vec<u8> {
+    let bus_backend = RecordingSpiBus::new();
+    let dc = TestDc(&bus_backend);
+    let mut delay = DummyDelay;
+    let bus = SpiBusWrapper::new(&bus_backend, dc, DummyPin, FixedPin(true));
+    let mut driver = EpdBuilder::<_, GDEP073E01>::new(controller).build(bus);
+    driver.init(&mut delay).await.expect("ED2208 init failed");
+
+    let records = coalesce(&bus_backend.records.borrow());
+    let at = records
+        .iter()
+        .position(|r| *r == SpiRecord::Command(0x30))
+        .expect("PLL command missing from init");
+    match &records[at + 1] {
+        SpiRecord::Data(d) => d.clone(),
+        other => panic!("expected data after PLL command, got {other:?}"),
+    }
+}
+
+#[maybe_async_cfg::maybe(
+    sync(feature = "blocking", keep_self),
+    async(not(feature = "blocking"), keep_self)
+)]
+async fn ed2208_refresh_speed_selects_pll_byte_body() {
+    let base = Ed2208Controller::new(GDEP073E01::WIDTH, GDEP073E01::HEIGHT);
+    // Default stays at the dynamic frame rate.
+    assert_eq!(ed2208_init_pll_byte(base).await, vec![0x08]);
+    for (speed, byte) in [
+        (Ed2208RefreshSpeed::Normal, 0x08),
+        (Ed2208RefreshSpeed::Medium, 0x04),
+        (Ed2208RefreshSpeed::Fast, 0x07),
+    ] {
+        let controller = base.with_refresh_speed(speed);
+        assert_eq!(ed2208_init_pll_byte(controller).await, vec![byte]);
+    }
+}
+
+epd_test!(
+    test_ed2208_refresh_speed_selects_pll_byte,
+    ed2208_refresh_speed_selects_pll_byte_body
+);
